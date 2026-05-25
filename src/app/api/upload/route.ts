@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { createImage } from '@/lib/db';
+import { put } from '@vercel/blob';
 import path from 'path';
 import fs from 'fs';
 import { randomUUID } from 'crypto';
@@ -8,15 +9,12 @@ import { randomUUID } from 'crypto';
 const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN;
 
 export async function POST(request: Request) {
     const session = await getSession();
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    if (!fs.existsSync(UPLOAD_DIR)) {
-        fs.mkdirSync(UPLOAD_DIR, { recursive: true });
     }
 
     const formData = await request.formData();
@@ -42,13 +40,27 @@ export async function POST(request: Request) {
             );
         }
 
-        const ext = path.extname(file.name) || '.jpg';
-        const filename = `${randomUUID()}${ext}`;
-        const buffer = Buffer.from(await file.arrayBuffer());
-        fs.writeFileSync(path.join(UPLOAD_DIR, filename), buffer);
+        const ext = file.name.includes('.') ? file.name.split('.').pop() || 'jpg' : 'jpg';
 
-        const image = await createImage(filename, file.name);
-        results.push(image);
+        if (USE_BLOB) {
+            const blobPath = `snack-images/${randomUUID()}.${ext}`;
+            const blob = await put(blobPath, file, {
+                access: 'public',
+                addRandomSuffix: false,
+            });
+            const image = await createImage(blob.url, file.name);
+            results.push(image);
+        } else {
+            // Local filesystem fallback for dev
+            if (!fs.existsSync(UPLOAD_DIR)) {
+                fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+            }
+            const filename = `${randomUUID()}.${ext}`;
+            const buffer = Buffer.from(await file.arrayBuffer());
+            fs.writeFileSync(path.join(UPLOAD_DIR, filename), buffer);
+            const image = await createImage(`/uploads/${filename}`, file.name);
+            results.push(image);
+        }
     }
 
     return NextResponse.json({ images: results });

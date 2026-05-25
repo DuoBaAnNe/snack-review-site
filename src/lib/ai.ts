@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import type { AnalysisResult } from '@/types';
 
 const API_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.deepseek.com/anthropic';
@@ -24,16 +22,24 @@ Rules:
 - Do NOT invent or guess information that is not visible on the package
 - Return ONLY the JSON object, no other text before or after`;
 
-export async function analyzeSnackImage(imageFilename: string): Promise<AnalysisResult> {
-    const imagePath = path.join(process.cwd(), 'public', 'uploads', imageFilename);
-    const imageBuffer = fs.readFileSync(imagePath);
-    const base64 = imageBuffer.toString('base64');
-    const ext = path.extname(imageFilename).toLowerCase();
-    const mimeType = ext === '.png' ? 'image/png'
-        : ext === '.webp' ? 'image/webp'
-            : 'image/jpeg';
+export async function analyzeSnackImage(imageUrl: string): Promise<AnalysisResult> {
+    // Handle relative paths (local dev) - prepend the origin
+    const url = imageUrl.startsWith('http')
+        ? imageUrl
+        : `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}${imageUrl}`;
 
-    const response = await fetch(`${API_BASE}/v1/messages`, {
+    const response = await fetch(url);
+    if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.status}`);
+    }
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const base64 = buffer.toString('base64');
+
+    // Determine mime type from URL extension or response
+    const contentType = response.headers.get('content-type') || '';
+    const mimeType = contentType.startsWith('image/') ? contentType : 'image/jpeg';
+
+    const apiResponse = await fetch(`${API_BASE}/v1/messages`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -60,11 +66,11 @@ export async function analyzeSnackImage(imageFilename: string): Promise<Analysis
         })
     });
 
-    if (!response.ok) {
-        throw new Error(`AI API error: ${response.status} ${response.statusText}`);
+    if (!apiResponse.ok) {
+        throw new Error(`AI API error: ${apiResponse.status} ${apiResponse.statusText}`);
     }
 
-    const json = await response.json();
+    const json = await apiResponse.json();
     const text: string = json.content?.[0]?.text || '';
 
     let cleaned = text.trim();

@@ -1,4 +1,5 @@
 import { createClient } from '@libsql/client';
+import { del } from '@vercel/blob';
 import fs from 'fs';
 import path from 'path';
 import type { Snack, SnackImage, CreateSnackInput } from '@/types';
@@ -16,7 +17,6 @@ async function getDb() {
         } else {
             client = createClient({ url: 'file:./database/snacks.db' });
         }
-        // createClient returns a Promise if using remote URL
         if (client instanceof Promise) {
             client = await client;
         }
@@ -126,8 +126,15 @@ export async function deleteSnack(id: number): Promise<boolean> {
     const db = await getDb();
     const imgResult = await db.execute('SELECT filename FROM snack_images WHERE snack_id = ?', [id]);
     for (const row of imgResult.rows) {
-        const filePath = path.join(process.cwd(), 'public', 'uploads', row.filename as string);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        const fname = row.filename as string;
+        if (fname.startsWith('http')) {
+            // Vercel Blob URL
+            try { await del(fname); } catch { /* ignore */ }
+        } else {
+            // Local filesystem path
+            const filePath = path.join(process.cwd(), 'public', fname);
+            try { if (fs.existsSync(filePath)) fs.unlinkSync(filePath); } catch { /* ignore */ }
+        }
     }
     const result = await db.execute('DELETE FROM snacks WHERE id = ?', [id]);
     return result.rowsAffected > 0;
@@ -135,11 +142,11 @@ export async function deleteSnack(id: number): Promise<boolean> {
 
 // --- Image queries ---
 
-export async function createImage(filename: string, originalName: string): Promise<SnackImage> {
+export async function createImage(url: string, originalName: string): Promise<SnackImage> {
     const db = await getDb();
     const result = await db.execute(
         'INSERT INTO snack_images (snack_id, filename, original_name) VALUES (NULL, ?, ?)',
-        [filename, originalName]
+        [url, originalName]
     );
     const imgResult = await db.execute('SELECT * FROM snack_images WHERE id = ?', [Number(result.lastInsertRowid)]);
     return rowToImage(imgResult.rows[0]);

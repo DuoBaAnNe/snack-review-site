@@ -30,7 +30,7 @@ export default function ImageCarousel({ images }: { images: SnackImage[] }) {
     return (
         <div className="relative w-full aspect-square overflow-hidden group">
             <img
-                src={`/uploads/${images[current].filename}`}
+                src={images[current].filename}
                 alt={images[current].original_name}
                 className="w-full h-full object-cover"
             />

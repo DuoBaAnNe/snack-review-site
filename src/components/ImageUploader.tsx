@@ -89,7 +89,7 @@ export default function ImageUploader({ onImagesChange }: Props) {
                     {images.map((img) => (
                         <div key={img.id} className="relative group">
                             <img
-                                src={`/uploads/${img.filename}`}
+                                src={img.filename}
                                 alt={img.original_name}
                                 className="w-20 h-20 object-cover rounded-lg border border-gray-200"
                             />

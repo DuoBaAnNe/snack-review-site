@@ -42,7 +42,7 @@ export default async function AdminDashboard() {
                                     <td className="px-4 py-3">
                                         {snack.images[0] ? (
                                             <img
-                                                src={`/uploads/${snack.images[0].filename}`}
+                                                src={snack.images[0].filename}
                                                 alt="thumb"
                                                 className="w-12 h-12 rounded object-cover"
                                             />
