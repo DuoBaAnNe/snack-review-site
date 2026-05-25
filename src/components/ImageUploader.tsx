@@ -22,8 +22,8 @@ export default function ImageUploader({ onImagesChange }: Props) {
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     async function resizeImage(file: File): Promise<File> {
-        const MAX_PX = 1920;
-        const MAX_BYTES = 3 * 1024 * 1024;
+        const MAX_PX = 2048;
+        const MAX_BYTES = 8 * 1024 * 1024;
         if (file.size <= MAX_BYTES) return file;
 
         return new Promise((resolve) => {
@@ -40,7 +40,7 @@ export default function ImageUploader({ onImagesChange }: Props) {
                 ctx.drawImage(img, 0, 0, width, height);
                 canvas.toBlob((blob) => {
                     resolve(new File([blob!], file.name, { type: 'image/jpeg' }));
-                }, 'image/jpeg', 0.85);
+                }, 'image/jpeg', 0.92);
             };
             img.src = URL.createObjectURL(file);
         });
@@ -111,7 +111,7 @@ export default function ImageUploader({ onImagesChange }: Props) {
                                 d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                         </svg>
                         <p className="text-sm text-gray-500">Drop images here or click to browse</p>
-                        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP · Max 3MB each (auto-resized)</p>
+                        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP · Max 10MB each (auto-resized)</p>
                     </>
                 )}
             </div>

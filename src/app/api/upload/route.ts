@@ -3,7 +3,7 @@ import { getSession } from '@/lib/auth';
 import { createImage } from '@/lib/db';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const MAX_SIZE = 3 * 1024 * 1024; // 3MB (Vercel serverless limit is 4.5MB body)
+const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 export async function POST(request: Request) {
     const session = await getSession();
