@@ -21,13 +21,39 @@ export default function ImageUploader({ onImagesChange }: Props) {
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    async function resizeImage(file: File): Promise<File> {
+        const MAX_PX = 1920;
+        const MAX_BYTES = 3 * 1024 * 1024;
+        if (file.size <= MAX_BYTES) return file;
+
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                let { width, height } = img;
+                if (width > MAX_PX) { height = Math.round(height * MAX_PX / width); width = MAX_PX; }
+                if (height > MAX_PX) { width = Math.round(width * MAX_PX / height); height = MAX_PX; }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d')!;
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob((blob) => {
+                    resolve(new File([blob!], file.name, { type: 'image/jpeg' }));
+                }, 'image/jpeg', 0.85);
+            };
+            img.src = URL.createObjectURL(file);
+        });
+    }
+
     async function uploadFiles(files: FileList) {
         setUploading(true);
         setError('');
 
         const formData = new FormData();
         for (const f of Array.from(files)) {
-            formData.append('images', f);
+            const resized = await resizeImage(f);
+            formData.append('images', resized);
         }
 
         try {
@@ -85,7 +111,7 @@ export default function ImageUploader({ onImagesChange }: Props) {
                                 d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                         </svg>
                         <p className="text-sm text-gray-500">Drop images here or click to browse</p>
-                        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP · Max 10MB each</p>
+                        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP · Max 3MB each (auto-resized)</p>
                     </>
                 )}
             </div>
