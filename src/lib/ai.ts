@@ -1,6 +1,6 @@
 import type { AnalysisResult } from '@/types';
 
-const API_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.deepseek.com/anthropic';
+const API_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.deepseek.com';
 const API_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || '';
 const MODEL = process.env.ANTHROPIC_MODEL || 'deepseek-v4-pro';
 
@@ -23,12 +23,11 @@ Rules:
 - Return ONLY the JSON object, no other text before or after`;
 
 export async function analyzeSnackImage(base64Data: string, mimeType: string): Promise<AnalysisResult> {
-    const apiResponse = await fetch(`${API_BASE}/v1/messages`, {
+    const apiResponse = await fetch(`${API_BASE}/v1/chat/completions`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
-            'x-api-key': API_TOKEN,
-            'anthropic-version': '2023-06-01',
+            'Authorization': `Bearer ${API_TOKEN}`,
         },
         body: JSON.stringify({
             model: MODEL,
@@ -37,11 +36,9 @@ export async function analyzeSnackImage(base64Data: string, mimeType: string): P
                 role: 'user',
                 content: [
                     {
-                        type: 'image',
-                        source: {
-                            type: 'base64',
-                            media_type: mimeType,
-                            data: base64Data,
+                        type: 'image_url',
+                        image_url: {
+                            url: `data:${mimeType};base64,${base64Data}`,
                         }
                     },
                     { type: 'text', text: ANALYSIS_PROMPT }
@@ -51,11 +48,12 @@ export async function analyzeSnackImage(base64Data: string, mimeType: string): P
     });
 
     if (!apiResponse.ok) {
-        throw new Error(`AI API error: ${apiResponse.status}`);
+        const errorText = await apiResponse.text().catch(() => '');
+        throw new Error(`AI API error: ${apiResponse.status} ${errorText}`);
     }
 
     const json = await apiResponse.json();
-    const text: string = json.content?.[0]?.text || '';
+    const text: string = json.choices?.[0]?.message?.content || '';
 
     let cleaned = text.trim();
     if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);

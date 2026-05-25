@@ -2,13 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import type { SnackImage } from '@/types';
-
-function imageUrl(img: SnackImage): string {
-    if (img.data) {
-        return `data:${img.mime_type};base64,${img.data}`;
-    }
-    return img.filename; // legacy URL
-}
+import { getImageUrl } from '@/lib/image-url';
 
 export default function ImageCarousel({ images }: { images: SnackImage[] }) {
     const [current, setCurrent] = useState(0);
@@ -37,7 +31,7 @@ export default function ImageCarousel({ images }: { images: SnackImage[] }) {
     return (
         <div className="relative w-full aspect-square overflow-hidden group">
             <img
-                src={imageUrl(images[current])}
+                src={getImageUrl(images[current])}
                 alt={images[current].original_name}
                 className="w-full h-full object-cover"
             />

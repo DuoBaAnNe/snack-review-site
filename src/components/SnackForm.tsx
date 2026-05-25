@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Snack, SnackImage, CreateSnackInput } from '@/types';
 import ImageUploader from './ImageUploader';
@@ -65,9 +65,6 @@ export default function SnackForm({ mode, initialData }: Props) {
     const [uploadedImages, setUploadedImages] = useState<SnackImage[]>(
         initialData?.images || []
     );
-    const filesRef = useRef<File[]>(initialData?.images.map(() => new File([], '')) || []);
-    const [analyzing, setAnalyzing] = useState(false);
-    const [analyzeError, setAnalyzeError] = useState('');
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
 
@@ -75,68 +72,9 @@ export default function SnackForm({ mode, initialData }: Props) {
         setInput((prev) => ({ ...prev, [key]: value }));
     }
 
-    function handleImagesChange(images: SnackImage[], files: File[]) {
+    function handleImagesChange(images: SnackImage[], _files: File[]) {
         setUploadedImages(images);
-        filesRef.current = files;
         setInput((prev) => ({ ...prev, image_ids: images.map((img) => img.id) }));
-    }
-
-    function readFileAsBase64(file: File): Promise<{ base64Data: string; mimeType: string }> {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-                const result = reader.result as string;
-                // result is "data:mime/type;base64,xxxxx"
-                const commaIdx = result.indexOf(',');
-                resolve({
-                    base64Data: result.slice(commaIdx + 1),
-                    mimeType: file.type || result.slice(5, commaIdx).replace(/;.*/, '') || 'image/jpeg',
-                });
-            };
-            reader.onerror = () => reject(new Error('Failed to read file'));
-            reader.readAsDataURL(file);
-        });
-    }
-
-    async function handleAnalyze() {
-        const files = filesRef.current;
-        if (files.length === 0) {
-            setAnalyzeError('Please upload an image first');
-            return;
-        }
-        const latestFile = files[files.length - 1];
-        if (!latestFile || latestFile.size === 0) {
-            setAnalyzeError('No valid image to analyze');
-            return;
-        }
-
-        setAnalyzing(true);
-        setAnalyzeError('');
-        try {
-            const { base64Data, mimeType } = await readFileAsBase64(latestFile);
-            const res = await fetch('/api/analyze', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ base64Data, mimeType }),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                setInput((prev) => ({
-                    ...prev,
-                    brand_name: data.brand_name || prev.brand_name,
-                    product_name: data.product_name || prev.product_name,
-                    manufacturer_name: data.manufacturer_name || prev.manufacturer_name,
-                    manufacturer_address: data.manufacturer_address || prev.manufacturer_address,
-                    manufacturer_contact: data.manufacturer_contact || prev.manufacturer_contact,
-                    ingredients: data.ingredients || prev.ingredients,
-                }));
-            } else {
-                setAnalyzeError(data.error || 'AI analysis failed');
-            }
-        } catch {
-            setAnalyzeError('AI service unavailable. Fill in fields manually.');
-        }
-        setAnalyzing(false);
     }
 
     async function handleSave() {
@@ -171,17 +109,6 @@ export default function SnackForm({ mode, initialData }: Props) {
             <section className="bg-white rounded-xl border border-gray-100 p-6">
                 <h2 className="font-semibold text-gray-800 mb-4">Step 1: Upload Images</h2>
                 <ImageUploader onImagesChange={handleImagesChange} />
-                {input.image_ids.length > 0 && (
-                    <button
-                        type="button"
-                        onClick={handleAnalyze}
-                        disabled={analyzing}
-                        className="mt-3 px-4 py-2 bg-purple-500 text-white text-sm rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50"
-                    >
-                        {analyzing ? 'Analyzing...' : 'Analyze with AI'}
-                    </button>
-                )}
-                {analyzeError && <p className="text-yellow-600 text-sm mt-2">{analyzeError}</p>}
             </section>
 
             {/* Product Info */}

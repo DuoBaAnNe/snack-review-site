@@ -172,6 +172,21 @@ export async function linkImagesToSnack(snackId: number, imageIds: number[]): Pr
     }
 }
 
+export async function getImageById(id: number): Promise<SnackImage | undefined> {
+    const db = await getDb();
+    const result = await db.execute('SELECT * FROM snack_images WHERE id = ?', [id]);
+    if (result.rows.length === 0) return undefined;
+    const row = result.rows[0];
+    return {
+        id: row.id as number,
+        filename: row.filename as string,
+        original_name: row.original_name as string,
+        data: row.data as string,
+        mime_type: row.mime_type as string,
+        sort_order: row.sort_order as number,
+    };
+}
+
 // --- Auth queries ---
 
 export async function getUserByUsername(username: string) {
@@ -215,7 +230,7 @@ function rowToImage(row: any): SnackImage {
         id: row.id,
         filename: row.filename as string,
         original_name: row.original_name as string,
-        data: row.data as string,
+        data: '', // stripped — use /api/images/[id] to fetch
         mime_type: row.mime_type as string,
         sort_order: row.sort_order as number,
     };

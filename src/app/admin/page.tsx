@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { getAllSnacks } from '@/lib/db';
+import { getImageUrl } from '@/lib/image-url';
 import DeleteButton from '@/components/DeleteButton';
 
 export default async function AdminDashboard() {
@@ -42,7 +43,7 @@ export default async function AdminDashboard() {
                                     <td className="px-4 py-3">
                                         {snack.images[0] ? (
                                             <img
-                                                src={snack.images[0].data ? `data:${snack.images[0].mime_type};base64,${snack.images[0].data}` : snack.images[0].filename}
+                                                src={getImageUrl(snack.images[0])}
                                                 alt="thumb"
                                                 className="w-12 h-12 rounded object-cover"
                                             />
