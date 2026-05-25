@@ -1,25 +1,32 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import type { SnackImage } from '@/types';
 
-function imageUrl(img: SnackImage): string {
-    if (img.data) {
-        return `data:${img.mime_type};base64,${img.data}`;
-    }
-    return img.filename;
+interface UploadEntry {
+    image: SnackImage;
+    file: File;
+    previewUrl: string;
 }
 
 interface Props {
-    onImagesChange: (images: SnackImage[]) => void;
+    onImagesChange: (images: SnackImage[], files: File[]) => void;
 }
 
 export default function ImageUploader({ onImagesChange }: Props) {
-    const [images, setImages] = useState<SnackImage[]>([]);
+    const [entries, setEntries] = useState<UploadEntry[]>([]);
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState('');
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const notifyParent = useCallback((newEntries: UploadEntry[]) => {
+        setEntries(newEntries);
+        onImagesChange(
+            newEntries.map((e) => e.image),
+            newEntries.map((e) => e.file)
+        );
+    }, [onImagesChange]);
 
     async function resizeImage(file: File): Promise<File> {
         const MAX_PX = 2048;
@@ -50,19 +57,25 @@ export default function ImageUploader({ onImagesChange }: Props) {
         setUploading(true);
         setError('');
 
+        const fileArray = Array.from(files);
+        const resizedFiles = await Promise.all(fileArray.map(resizeImage));
+
         const formData = new FormData();
-        for (const f of Array.from(files)) {
-            const resized = await resizeImage(f);
-            formData.append('images', resized);
+        for (const f of resizedFiles) {
+            formData.append('images', f);
         }
 
         try {
             const res = await fetch('/api/upload', { method: 'POST', body: formData });
             const data = await res.json();
-            if (res.ok) {
-                const updated = [...images, ...data.images];
-                setImages(updated);
-                onImagesChange(updated);
+            if (res.ok && data.images) {
+                const newEntries: UploadEntry[] = data.images.map((img: SnackImage, i: number) => ({
+                    image: img,
+                    file: resizedFiles[i],
+                    previewUrl: URL.createObjectURL(resizedFiles[i]),
+                }));
+                const updated = [...entries, ...newEntries];
+                notifyParent(updated);
             } else {
                 setError(data.error || 'Upload failed');
             }
@@ -73,9 +86,9 @@ export default function ImageUploader({ onImagesChange }: Props) {
     }
 
     function removeImage(id: number) {
-        const updated = images.filter((img) => img.id !== id);
-        setImages(updated);
-        onImagesChange(updated);
+        const entry = entries.find((e) => e.image.id === id);
+        if (entry) URL.revokeObjectURL(entry.previewUrl);
+        notifyParent(entries.filter((e) => e.image.id !== id));
     }
 
     function handleDrop(e: React.DragEvent) {
@@ -117,17 +130,17 @@ export default function ImageUploader({ onImagesChange }: Props) {
             </div>
             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
 
-            {images.length > 0 && (
+            {entries.length > 0 && (
                 <div className="flex gap-2 mt-3 flex-wrap">
-                    {images.map((img) => (
-                        <div key={img.id} className="relative group">
+                    {entries.map((entry) => (
+                        <div key={entry.image.id} className="relative group">
                             <img
-                                src={imageUrl(img)}
-                                alt={img.original_name}
+                                src={entry.previewUrl}
+                                alt={entry.image.original_name}
                                 className="w-20 h-20 object-cover rounded-lg border border-gray-200"
                             />
                             <button
-                                onClick={(e) => { e.stopPropagation(); removeImage(img.id); }}
+                                onClick={(e) => { e.stopPropagation(); removeImage(entry.image.id); }}
                                 className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
                             >
                                 &times;

@@ -39,7 +39,9 @@ export async function POST(request: Request) {
             const base64Data = buffer.toString('base64');
 
             const image = await createImage(file.name, base64Data, file.type);
-            results.push(image);
+            // Strip base64 data from response — too large, client uses local File for preview
+            const { data: _, ...meta } = image;
+            results.push(meta);
         } catch (e: any) {
             console.error('Upload error:', e);
             return NextResponse.json(
