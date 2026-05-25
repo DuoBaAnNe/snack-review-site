@@ -30,13 +30,19 @@ export default function ImageUploader({ onImagesChange }: Props) {
 
     async function resizeImage(file: File): Promise<File> {
         const MAX_PX = 2048;
-        const MAX_BYTES = 8 * 1024 * 1024;
-        if (file.size <= MAX_BYTES) return file;
+        const MAX_BYTES = 3.5 * 1024 * 1024; // must be under Vercel's 4.5MB limit
 
         return new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
                 let { width, height } = img;
+                const needsResize = file.size > MAX_BYTES || width > MAX_PX || height > MAX_PX;
+
+                if (!needsResize) {
+                    resolve(file);
+                    return;
+                }
+
                 if (width > MAX_PX) { height = Math.round(height * MAX_PX / width); width = MAX_PX; }
                 if (height > MAX_PX) { width = Math.round(width * MAX_PX / height); height = MAX_PX; }
 
