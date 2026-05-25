@@ -22,23 +22,7 @@ Rules:
 - Do NOT invent or guess information that is not visible on the package
 - Return ONLY the JSON object, no other text before or after`;
 
-export async function analyzeSnackImage(imageUrl: string): Promise<AnalysisResult> {
-    // Handle relative paths (local dev) - prepend the origin
-    const url = imageUrl.startsWith('http')
-        ? imageUrl
-        : `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}${imageUrl}`;
-
-    const response = await fetch(url);
-    if (!response.ok) {
-        throw new Error(`Failed to fetch image: ${response.status}`);
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const base64 = buffer.toString('base64');
-
-    // Determine mime type from URL extension or response
-    const contentType = response.headers.get('content-type') || '';
-    const mimeType = contentType.startsWith('image/') ? contentType : 'image/jpeg';
-
+export async function analyzeSnackImage(base64Data: string, mimeType: string): Promise<AnalysisResult> {
     const apiResponse = await fetch(`${API_BASE}/v1/messages`, {
         method: 'POST',
         headers: {
@@ -57,7 +41,7 @@ export async function analyzeSnackImage(imageUrl: string): Promise<AnalysisResul
                         source: {
                             type: 'base64',
                             media_type: mimeType,
-                            data: base64,
+                            data: base64Data,
                         }
                     },
                     { type: 'text', text: ANALYSIS_PROMPT }
@@ -67,7 +51,7 @@ export async function analyzeSnackImage(imageUrl: string): Promise<AnalysisResul
     });
 
     if (!apiResponse.ok) {
-        throw new Error(`AI API error: ${apiResponse.status} ${apiResponse.statusText}`);
+        throw new Error(`AI API error: ${apiResponse.status}`);
     }
 
     const json = await apiResponse.json();

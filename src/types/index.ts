@@ -2,6 +2,8 @@ export interface SnackImage {
     id: number;
     filename: string;
     original_name: string;
+    data: string;
+    mime_type: string;
     sort_order: number;
 }
 

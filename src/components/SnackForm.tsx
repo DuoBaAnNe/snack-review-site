@@ -79,16 +79,16 @@ export default function SnackForm({ mode, initialData }: Props) {
         setInput((prev) => ({ ...prev, image_ids: images.map((img) => img.id) }));
     }
 
-    async function handleAnalyze(imageFilename: string) {
+    async function handleAnalyze(base64Data: string, mimeType: string) {
         setAnalyzing(true);
         setAnalyzeError('');
         try {
             const res = await fetch('/api/analyze', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ imageFilename }),
+                body: JSON.stringify({ base64Data, mimeType }),
             });
-            const data: AnalysisResult = await res.json();
+            const data = await res.json();
             if (res.ok) {
                 setInput((prev) => ({
                     ...prev,
@@ -100,7 +100,7 @@ export default function SnackForm({ mode, initialData }: Props) {
                     ingredients: data.ingredients || prev.ingredients,
                 }));
             } else {
-                setAnalyzeError((data as any).error || 'AI analysis failed');
+                setAnalyzeError(data.error || 'AI analysis failed');
             }
         } catch {
             setAnalyzeError('AI service unavailable. Fill in fields manually.');
@@ -145,7 +145,7 @@ export default function SnackForm({ mode, initialData }: Props) {
                         type="button"
                         onClick={() => {
                             const latest = uploadedImages[uploadedImages.length - 1];
-                            if (latest) handleAnalyze(latest.filename);
+                            if (latest && latest.data) handleAnalyze(latest.data, latest.mime_type);
                         }}
                         disabled={analyzing}
                         className="mt-3 px-4 py-2 bg-purple-500 text-white text-sm rounded-lg hover:bg-purple-600 transition-colors disabled:opacity-50"

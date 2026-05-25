@@ -36,8 +36,10 @@ CREATE TABLE IF NOT EXISTS snacks (
 CREATE TABLE IF NOT EXISTS snack_images (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     snack_id INTEGER REFERENCES snacks(id) ON DELETE CASCADE,
-    filename TEXT NOT NULL,
+    filename TEXT NOT NULL DEFAULT '',
     original_name TEXT NOT NULL,
+    data TEXT NOT NULL DEFAULT '',
+    mime_type TEXT NOT NULL DEFAULT 'image/jpeg',
     sort_order INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
 );

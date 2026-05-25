@@ -8,13 +8,13 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { imageFilename } = await request.json();
-    if (!imageFilename) {
-        return NextResponse.json({ error: 'imageFilename is required' }, { status: 400 });
+    const { base64Data, mimeType } = await request.json();
+    if (!base64Data) {
+        return NextResponse.json({ error: 'base64Data is required' }, { status: 400 });
     }
 
     try {
-        const result = await analyzeSnackImage(imageFilename);
+        const result = await analyzeSnackImage(base64Data, mimeType || 'image/jpeg');
         return NextResponse.json(result);
     } catch (error) {
         return NextResponse.json(

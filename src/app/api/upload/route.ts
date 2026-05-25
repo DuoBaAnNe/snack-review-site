@@ -1,15 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { createImage } from '@/lib/db';
-import { put } from '@vercel/blob';
-import path from 'path';
-import fs from 'fs';
-import { randomUUID } from 'crypto';
 
-const UPLOAD_DIR = path.join(process.cwd(), 'public', 'uploads');
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
-const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN;
 
 export async function POST(request: Request) {
     const session = await getSession();
@@ -29,7 +23,7 @@ export async function POST(request: Request) {
     for (const file of files) {
         if (!ALLOWED_TYPES.includes(file.type)) {
             return NextResponse.json(
-                { error: `Invalid file type: ${file.type}. Allowed: JPEG, PNG, WebP` },
+                { error: `Invalid file type: ${file.type}` },
                 { status: 400 }
             );
         }
@@ -40,27 +34,11 @@ export async function POST(request: Request) {
             );
         }
 
-        const ext = file.name.includes('.') ? file.name.split('.').pop() || 'jpg' : 'jpg';
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const base64Data = buffer.toString('base64');
 
-        if (USE_BLOB) {
-            const blobPath = `snack-images/${randomUUID()}.${ext}`;
-            const blob = await put(blobPath, file, {
-                access: 'public',
-                addRandomSuffix: false,
-            });
-            const image = await createImage(blob.url, file.name);
-            results.push(image);
-        } else {
-            // Local filesystem fallback for dev
-            if (!fs.existsSync(UPLOAD_DIR)) {
-                fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-            }
-            const filename = `${randomUUID()}.${ext}`;
-            const buffer = Buffer.from(await file.arrayBuffer());
-            fs.writeFileSync(path.join(UPLOAD_DIR, filename), buffer);
-            const image = await createImage(`/uploads/${filename}`, file.name);
-            results.push(image);
-        }
+        const image = await createImage(file.name, base64Data, file.type);
+        results.push(image);
     }
 
     return NextResponse.json({ images: results });

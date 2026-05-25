@@ -3,6 +3,13 @@
 import { useState, useRef } from 'react';
 import type { SnackImage } from '@/types';
 
+function imageUrl(img: SnackImage): string {
+    if (img.data) {
+        return `data:${img.mime_type};base64,${img.data}`;
+    }
+    return img.filename;
+}
+
 interface Props {
     onImagesChange: (images: SnackImage[]) => void;
 }
@@ -89,7 +96,7 @@ export default function ImageUploader({ onImagesChange }: Props) {
                     {images.map((img) => (
                         <div key={img.id} className="relative group">
                             <img
-                                src={img.filename}
+                                src={imageUrl(img)}
                                 alt={img.original_name}
                                 className="w-20 h-20 object-cover rounded-lg border border-gray-200"
                             />
