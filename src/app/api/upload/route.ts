@@ -34,11 +34,19 @@ export async function POST(request: Request) {
             );
         }
 
-        const buffer = Buffer.from(await file.arrayBuffer());
-        const base64Data = buffer.toString('base64');
+        try {
+            const buffer = Buffer.from(await file.arrayBuffer());
+            const base64Data = buffer.toString('base64');
 
-        const image = await createImage(file.name, base64Data, file.type);
-        results.push(image);
+            const image = await createImage(file.name, base64Data, file.type);
+            results.push(image);
+        } catch (e: any) {
+            console.error('Upload error:', e);
+            return NextResponse.json(
+                { error: `Upload failed: ${e.message || 'Unknown error'}` },
+                { status: 500 }
+            );
+        }
     }
 
     return NextResponse.json({ images: results });

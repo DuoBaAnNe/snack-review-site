@@ -33,6 +33,28 @@ async function initSchema() {
         path.join(process.cwd(), 'database', 'schema.sql'), 'utf-8'
     );
     await client.executeMultiple(schema);
+
+    // Run migration for base64 columns (use execute, not executeMultiple, for ALTER TABLE on Turso)
+    try {
+        await client.execute(
+            "ALTER TABLE snack_images ADD COLUMN data TEXT NOT NULL DEFAULT '';"
+        );
+    } catch (e: any) {
+        // Ignore "duplicate column" errors; throw everything else
+        if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) {
+            console.error('Migration error (data column):', e);
+        }
+    }
+    try {
+        await client.execute(
+            "ALTER TABLE snack_images ADD COLUMN mime_type TEXT NOT NULL DEFAULT 'image/jpeg';"
+        );
+    } catch (e: any) {
+        if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) {
+            console.error('Migration error (mime_type column):', e);
+        }
+    }
+
     await client.execute(
         "INSERT OR IGNORE INTO admin_users (id, username, password_hash) VALUES (1, 'admin', ?)",
         [require('bcryptjs').hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10)]
