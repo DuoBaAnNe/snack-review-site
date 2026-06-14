@@ -1,12 +1,14 @@
 import Link from 'next/link';
 import { getAllSnacks, getAllNews } from '@/lib/db';
 import { getImageUrl } from '@/lib/image-url';
+import { requireAdmin } from '@/lib/admin-guard';
 import DeleteButton from '@/components/DeleteButton';
 import NewsManager from './NewsManager';
 
 export const dynamic = 'force-dynamic';
 
 export default async function AdminDashboard() {
+    await requireAdmin();
     const snacks = await getAllSnacks();
     const news = await getAllNews();
 

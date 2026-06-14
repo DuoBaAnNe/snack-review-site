@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
+import { getUserSession } from '@/lib/user-auth';
 import { createImage } from '@/lib/db';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 
 export async function POST(request: Request) {
-    const session = await getSession();
+    const adminSession = await getSession();
+    const userSession = !adminSession ? await getUserSession() : null;
+    const session = adminSession || userSession;
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
@@ -39,7 +42,6 @@ export async function POST(request: Request) {
             const base64Data = buffer.toString('base64');
 
             const image = await createImage(file.name, base64Data, file.type);
-            // Strip base64 data from response — too large, client uses local File for preview
             const { data: _, ...meta } = image;
             results.push(meta);
         } catch (e: any) {

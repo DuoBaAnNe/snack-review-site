@@ -22,6 +22,7 @@ export interface Snack {
     rating_packaging_portability: number;
     rating_use_case: number;
     rating_value: number;
+    created_by: string;
     created_at: string;
     updated_at: string;
     images: SnackImage[];
@@ -50,6 +51,7 @@ export interface CreateSnackInput {
     rating_packaging_portability: number;
     rating_use_case: number;
     rating_value: number;
+    created_by?: string;
     image_ids: number[];
 }
 
@@ -71,6 +73,7 @@ export interface Review {
     rating_value: number;
     review_text: string;
     created_at: string;
+    username?: string;
 }
 
 export interface NewsItem {

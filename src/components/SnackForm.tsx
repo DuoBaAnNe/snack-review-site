@@ -41,9 +41,10 @@ function defaultInput(): CreateSnackInput {
 interface Props {
     mode: 'create' | 'edit';
     initialData?: Snack;
+    redirectTo?: string;
 }
 
-export default function SnackForm({ mode, initialData }: Props) {
+export default function SnackForm({ mode, initialData, redirectTo }: Props) {
     const router = useRouter();
     const [input, setInput] = useState<CreateSnackInput>(() => {
         if (initialData) {
@@ -95,7 +96,7 @@ export default function SnackForm({ mode, initialData }: Props) {
                 body: JSON.stringify(input),
             });
             if (res.ok) {
-                router.push('/admin');
+                router.push(redirectTo || '/admin');
                 router.refresh();
             } else {
                 const text = await res.text();

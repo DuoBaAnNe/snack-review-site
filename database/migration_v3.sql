@@ -1,0 +1,3 @@
+ALTER TABLE snacks ADD COLUMN created_by TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN registration_ip TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN last_registration_at TEXT NOT NULL DEFAULT '';

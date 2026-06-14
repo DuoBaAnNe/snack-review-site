@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getSnackById } from '@/lib/db';
+import { requireAdmin } from '@/lib/admin-guard';
 import SnackForm from '@/components/SnackForm';
 
 export default async function EditSnackPage({
@@ -7,6 +8,7 @@ export default async function EditSnackPage({
 }: {
     params: Promise<{ id: string }>;
 }) {
+    await requireAdmin();
     const { id } = await params;
     const snack = await getSnackById(parseInt(id));
 
