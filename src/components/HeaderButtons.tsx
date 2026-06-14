@@ -60,18 +60,18 @@ export default function HeaderButtons() {
                     </>
                 ) : (
                     <>
-                        <Link
-                            href="/login"
-                            className="px-3 py-1 rounded-full bg-white/70 text-gray-600 hover:text-orange-500 border border-gray-200 transition-colors text-sm"
+                        <button
+                            onClick={() => { router.push('/login'); router.refresh(); }}
+                            className="px-3 py-1 rounded-full bg-white/70 text-gray-600 hover:text-orange-500 border border-gray-200 transition-colors text-sm cursor-pointer"
                         >
                             登录
-                        </Link>
-                        <Link
-                            href="/login?register=true"
-                            className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:opacity-90 transition-opacity text-sm"
+                        </button>
+                        <button
+                            onClick={() => { router.push('/login?register=true'); router.refresh(); }}
+                            className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:opacity-90 transition-opacity text-sm cursor-pointer"
                         >
                             注册
-                        </Link>
+                        </button>
                     </>
                 )}
             </div>
