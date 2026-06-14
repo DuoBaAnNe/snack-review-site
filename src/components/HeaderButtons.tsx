@@ -67,7 +67,7 @@ export default function HeaderButtons() {
                             登录
                         </Link>
                         <Link
-                            href="/login"
+                            href="/login?register=true"
                             className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:opacity-90 transition-opacity text-sm"
                         >
                             注册

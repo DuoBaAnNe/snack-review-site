@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function LoginPage() {
+function LoginForm() {
     const router = useRouter();
+    const searchParams = useSearchParams();
+    const isRegisterParam = searchParams.get('register') === 'true';
 
-    const [isRegister, setIsRegister] = useState(false);
+    const [isRegister, setIsRegister] = useState(isRegisterParam);
     const [email, setEmail] = useState('');
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -100,5 +102,13 @@ export default function LoginPage() {
                 </form>
             </div>
         </div>
+    );
+}
+
+export default function LoginPage() {
+    return (
+        <Suspense fallback={<div className="min-h-[60vh] flex items-center justify-center"><p className="text-gray-400">加载中...</p></div>}>
+            <LoginForm />
+        </Suspense>
     );
 }
