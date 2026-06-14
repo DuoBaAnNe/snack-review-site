@@ -1,4 +1,4 @@
-export default function RatingBar({ label, value }: { label: string; value: number }) {
+export default function RatingBar({ label, value, icon }: { label: string; value: number; icon?: string }) {
     const pct = (value / 10) * 100;
     const color =
         value <= 3 ? 'bg-red-500'

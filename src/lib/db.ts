@@ -59,6 +59,31 @@ async function initSchema() {
         "INSERT OR IGNORE INTO admin_users (id, username, password_hash) VALUES (1, 'admin', ?)",
         [require('bcryptjs').hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10)]
     );
+
+    // --- Migration v2: new ratings, category, review_text, users, reviews, news ---
+    try {
+        const migrationV2 = fs.readFileSync(
+            path.join(process.cwd(), 'database', 'migration_v2.sql'), 'utf-8'
+        );
+        const statements = migrationV2
+            .split(';')
+            .map(s => s.trim())
+            .filter(s => s.length > 0 && !s.startsWith('--'));
+        for (const stmt of statements) {
+            try {
+                await client.execute(stmt + ';');
+            } catch (e: any) {
+                const msg = (e.message || '').toLowerCase();
+                if (msg.includes('duplicate') || msg.includes('already exists') || msg.includes('has column')) {
+                    // Column/table already exists — safe to ignore
+                    continue;
+                }
+                console.error('Migration v2 error:', e.message, '| stmt:', stmt.substring(0, 80));
+            }
+        }
+    } catch (e: any) {
+        console.error('Migration v2 file error:', e);
+    }
 }
 
 // --- Snack queries ---
@@ -95,18 +120,17 @@ export async function createSnack(input: CreateSnackInput): Promise<Snack> {
     const result = await db.execute(
         `INSERT INTO snacks (
             brand_name, product_name, manufacturer_name, manufacturer_address,
-            manufacturer_contact, ingredients,
-            rating_packaging_quality, rating_packaging_design,
-            rating_appearance, rating_smell, rating_taste,
-            rating_satiety, rating_nutrition
+            brand_company, ingredients, category, review_text,
+            rating_taste_health, rating_ingredients_health,
+            rating_packaging_portability, rating_use_case, rating_value
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             input.brand_name, input.product_name,
             input.manufacturer_name, input.manufacturer_address,
-            input.manufacturer_contact, input.ingredients,
-            input.rating_packaging_quality, input.rating_packaging_design,
-            input.rating_appearance, input.rating_smell, input.rating_taste,
-            input.rating_satiety, input.rating_nutrition,
+            input.brand_company, input.ingredients,
+            input.category, input.review_text,
+            input.rating_taste_health, input.rating_ingredients_health,
+            input.rating_packaging_portability, input.rating_use_case, input.rating_value,
         ]
     );
     const id = Number(result.lastInsertRowid);
@@ -121,19 +145,19 @@ export async function updateSnack(id: number, input: CreateSnackInput): Promise<
     await db.execute(
         `UPDATE snacks SET
             brand_name = ?, product_name = ?, manufacturer_name = ?,
-            manufacturer_address = ?, manufacturer_contact = ?, ingredients = ?,
-            rating_packaging_quality = ?, rating_packaging_design = ?,
-            rating_appearance = ?, rating_smell = ?, rating_taste = ?,
-            rating_satiety = ?, rating_nutrition = ?,
+            manufacturer_address = ?, brand_company = ?, ingredients = ?,
+            category = ?, review_text = ?,
+            rating_taste_health = ?, rating_ingredients_health = ?,
+            rating_packaging_portability = ?, rating_use_case = ?, rating_value = ?,
             updated_at = datetime('now')
         WHERE id = ?`,
         [
             input.brand_name, input.product_name,
             input.manufacturer_name, input.manufacturer_address,
-            input.manufacturer_contact, input.ingredients,
-            input.rating_packaging_quality, input.rating_packaging_design,
-            input.rating_appearance, input.rating_smell, input.rating_taste,
-            input.rating_satiety, input.rating_nutrition,
+            input.brand_company, input.ingredients,
+            input.category, input.review_text,
+            input.rating_taste_health, input.rating_ingredients_health,
+            input.rating_packaging_portability, input.rating_use_case, input.rating_value,
             id,
         ]
     );
@@ -201,6 +225,71 @@ export async function getUserByUsername(username: string) {
     };
 }
 
+// --- News queries ---
+
+export async function getAllNews(): Promise<import('@/types').NewsItem[]> {
+    const db = await getDb();
+    const result = await db.execute('SELECT * FROM news ORDER BY created_at DESC');
+    return result.rows.map(rowToNews);
+}
+
+export async function getNewsById(id: number): Promise<import('@/types').NewsItem | undefined> {
+    const db = await getDb();
+    const result = await db.execute('SELECT * FROM news WHERE id = ?', [id]);
+    if (result.rows.length === 0) return undefined;
+    return rowToNews(result.rows[0]);
+}
+
+export async function createNews(title: string, content: string, sourceUrl: string): Promise<import('@/types').NewsItem> {
+    const db = await getDb();
+    const result = await db.execute(
+        'INSERT INTO news (title, content, source_url) VALUES (?, ?, ?)',
+        [title, content, sourceUrl]
+    );
+    return (await getNewsById(Number(result.lastInsertRowid)))!;
+}
+
+export async function deleteNews(id: number): Promise<boolean> {
+    const db = await getDb();
+    const result = await db.execute('DELETE FROM news WHERE id = ?', [id]);
+    return result.rowsAffected > 0;
+}
+
+function rowToNews(row: any): import('@/types').NewsItem {
+    return {
+        id: row.id as number,
+        title: row.title as string,
+        content: row.content as string,
+        source_url: row.source_url as string,
+        created_at: row.created_at as string,
+    };
+}
+
+// --- User queries ---
+
+export async function createUser(email: string, username: string, passwordHash: string) {
+    const db = await getDb();
+    const result = await db.execute(
+        'INSERT INTO users (email, username, password_hash) VALUES (?, ?, ?)',
+        [email, username, passwordHash]
+    );
+    return Number(result.lastInsertRowid);
+}
+
+export async function getUserByEmail(email: string) {
+    const db = await getDb();
+    const result = await db.execute('SELECT * FROM users WHERE email = ?', [email]);
+    if (result.rows.length === 0) return undefined;
+    const row = result.rows[0];
+    return {
+        id: row.id as number,
+        email: row.email as string,
+        username: row.username as string,
+        password_hash: row.password_hash as string,
+        created_at: row.created_at as string,
+    };
+}
+
 // --- Helpers ---
 
 function rowToSnack(row: any): Snack {
@@ -210,15 +299,15 @@ function rowToSnack(row: any): Snack {
         product_name: row.product_name || '',
         manufacturer_name: row.manufacturer_name || '',
         manufacturer_address: row.manufacturer_address || '',
-        manufacturer_contact: row.manufacturer_contact || '',
+        brand_company: row.brand_company || '',
         ingredients: row.ingredients || '',
-        rating_packaging_quality: row.rating_packaging_quality,
-        rating_packaging_design: row.rating_packaging_design,
-        rating_appearance: row.rating_appearance,
-        rating_smell: row.rating_smell,
-        rating_taste: row.rating_taste,
-        rating_satiety: row.rating_satiety,
-        rating_nutrition: row.rating_nutrition,
+        category: row.category || '膨化食品',
+        review_text: row.review_text || '',
+        rating_taste_health: row.rating_taste_health ?? 5,
+        rating_ingredients_health: row.rating_ingredients_health ?? 5,
+        rating_packaging_portability: row.rating_packaging_portability ?? 5,
+        rating_use_case: row.rating_use_case ?? 5,
+        rating_value: row.rating_value ?? 5,
         created_at: row.created_at as string,
         updated_at: row.updated_at as string,
         images: [],

@@ -13,7 +13,12 @@ export async function POST(request: Request) {
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const input: CreateSnackInput = await request.json();
-    const snack = await createSnack(input);
-    return NextResponse.json(snack, { status: 201 });
+    try {
+        const input: CreateSnackInput = await request.json();
+        const snack = await createSnack(input);
+        return NextResponse.json(snack, { status: 201 });
+    } catch (e: any) {
+        console.error('POST /api/snacks error:', e.message, e);
+        return NextResponse.json({ error: e.message || 'Server error' }, { status: 500 });
+    }
 }

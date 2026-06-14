@@ -5,16 +5,22 @@ import type { SnackImage } from '@/types';
 
 interface UploadEntry {
     image: SnackImage;
-    file: File;
+    file?: File;
     previewUrl: string;
 }
 
 interface Props {
     onImagesChange: (images: SnackImage[], files: File[]) => void;
+    initialImages?: SnackImage[];
 }
 
-export default function ImageUploader({ onImagesChange }: Props) {
-    const [entries, setEntries] = useState<UploadEntry[]>([]);
+export default function ImageUploader({ onImagesChange, initialImages }: Props) {
+    const [entries, setEntries] = useState<UploadEntry[]>(() =>
+        (initialImages || []).map((img) => ({
+            image: img,
+            previewUrl: `/api/images/${img.id}`,
+        }))
+    );
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState('');
     const [dragOver, setDragOver] = useState(false);
@@ -24,7 +30,7 @@ export default function ImageUploader({ onImagesChange }: Props) {
         setEntries(newEntries);
         onImagesChange(
             newEntries.map((e) => e.image),
-            newEntries.map((e) => e.file)
+            newEntries.filter((e) => e.file).map((e) => e.file!)
         );
     }, [onImagesChange]);
 

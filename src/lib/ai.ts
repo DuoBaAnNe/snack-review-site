@@ -11,7 +11,7 @@ const ANALYSIS_PROMPT = `Analyze this image of a snack product's packaging. Extr
   "product_name": "the specific product name of this snack item",
   "manufacturer_name": "the name of the company that manufactured this product",
   "manufacturer_address": "the manufacturer's physical address if shown",
-  "manufacturer_contact": "phone number, website, email, or other contact info if shown",
+  "brand_company": "the brand company name if different from manufacturer, otherwise empty string",
   "ingredients": "the complete ingredients list exactly as printed on the package. Include all items in order"
 }
 
@@ -68,7 +68,7 @@ export async function analyzeSnackImage(base64Data: string, mimeType: string): P
             product_name: result.product_name || '',
             manufacturer_name: result.manufacturer_name || '',
             manufacturer_address: result.manufacturer_address || '',
-            manufacturer_contact: result.manufacturer_contact || '',
+            brand_company: result.brand_company || '',
             ingredients: result.ingredients || '',
         };
     } catch {
@@ -77,7 +77,7 @@ export async function analyzeSnackImage(base64Data: string, mimeType: string): P
             product_name: '',
             manufacturer_name: '',
             manufacturer_address: '',
-            manufacturer_contact: '',
+            brand_company: '',
             ingredients: '',
         };
     }

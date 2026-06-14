@@ -27,6 +27,12 @@ export default function AdminNav() {
                 <Link href="/admin/new" className={linkClass('/admin/new')}>
                     + Add Snack
                 </Link>
+                <Link href="/news" className={linkClass('/news')}>
+                    零食新闻
+                </Link>
+                <Link href="/ingredients" className={linkClass('/ingredients')}>
+                    成分研究
+                </Link>
                 <Link href="/" className="text-sm text-gray-400 hover:text-gray-600 ml-4">
                     View Public Site
                 </Link>

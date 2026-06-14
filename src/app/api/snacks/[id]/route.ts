@@ -23,13 +23,18 @@ export async function PUT(
     if (!session) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const { id } = await params;
-    const input: CreateSnackInput = await request.json();
-    const snack = await updateSnack(parseInt(id), input);
-    if (!snack) {
-        return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    try {
+        const { id } = await params;
+        const input: CreateSnackInput = await request.json();
+        const snack = await updateSnack(parseInt(id), input);
+        if (!snack) {
+            return NextResponse.json({ error: 'Not found' }, { status: 404 });
+        }
+        return NextResponse.json(snack);
+    } catch (e: any) {
+        console.error('PUT /api/snacks/[id] error:', e.message, e);
+        return NextResponse.json({ error: e.message || 'Server error' }, { status: 500 });
     }
-    return NextResponse.json(snack);
 }
 
 export async function DELETE(

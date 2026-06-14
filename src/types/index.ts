@@ -13,15 +13,15 @@ export interface Snack {
     product_name: string;
     manufacturer_name: string;
     manufacturer_address: string;
-    manufacturer_contact: string;
+    brand_company: string;
     ingredients: string;
-    rating_packaging_quality: number;
-    rating_packaging_design: number;
-    rating_appearance: number;
-    rating_smell: number;
-    rating_taste: number;
-    rating_satiety: number;
-    rating_nutrition: number;
+    category: string;
+    review_text: string;
+    rating_taste_health: number;
+    rating_ingredients_health: number;
+    rating_packaging_portability: number;
+    rating_use_case: number;
+    rating_value: number;
     created_at: string;
     updated_at: string;
     images: SnackImage[];
@@ -32,7 +32,7 @@ export interface AnalysisResult {
     product_name: string;
     manufacturer_name: string;
     manufacturer_address: string;
-    manufacturer_contact: string;
+    brand_company: string;
     ingredients: string;
 }
 
@@ -41,14 +41,42 @@ export interface CreateSnackInput {
     product_name: string;
     manufacturer_name: string;
     manufacturer_address: string;
-    manufacturer_contact: string;
+    brand_company: string;
     ingredients: string;
-    rating_packaging_quality: number;
-    rating_packaging_design: number;
-    rating_appearance: number;
-    rating_smell: number;
-    rating_taste: number;
-    rating_satiety: number;
-    rating_nutrition: number;
+    category: string;
+    review_text: string;
+    rating_taste_health: number;
+    rating_ingredients_health: number;
+    rating_packaging_portability: number;
+    rating_use_case: number;
+    rating_value: number;
     image_ids: number[];
+}
+
+export interface User {
+    id: number;
+    email: string;
+    username: string;
+    created_at: string;
+}
+
+export interface Review {
+    id: number;
+    user_id: number;
+    snack_id: number;
+    rating_taste_health: number;
+    rating_ingredients_health: number;
+    rating_packaging_portability: number;
+    rating_use_case: number;
+    rating_value: number;
+    review_text: string;
+    created_at: string;
+}
+
+export interface NewsItem {
+    id: number;
+    title: string;
+    content: string;
+    source_url: string;
+    created_at: string;
 }
