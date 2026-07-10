@@ -27,7 +27,7 @@ function defaultInput(): CreateSnackInput {
         manufacturer_address: '',
         brand_company: '',
         ingredients: '',
-        category: '膨化食品',
+        category: '',
         review_text: '',
         rating_taste_health: 5,
         rating_ingredients_health: 5,
@@ -72,17 +72,31 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
     );
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
+    const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
     function updateField(key: keyof CreateSnackInput, value: string | number) {
         setInput((prev) => ({ ...prev, [key]: value }));
+        setFieldErrors((prev) => ({ ...prev, [key]: '' }));
     }
 
     function handleImagesChange(images: SnackImage[], _files: File[]) {
         setUploadedImages(images);
         setInput((prev) => ({ ...prev, image_ids: images.map((img) => img.id) }));
+        setFieldErrors((prev) => ({ ...prev, images: '' }));
+    }
+
+    function validate(): boolean {
+        const errors: Record<string, string> = {};
+        if (uploadedImages.length === 0) errors.images = '请至少上传一张图片';
+        if (!input.brand_name.trim()) errors.brand_name = '请输入品牌';
+        if (!input.product_name.trim()) errors.product_name = '请输入品名';
+        if (!input.category.trim()) errors.category = '请选择分类';
+        setFieldErrors(errors);
+        return Object.keys(errors).length === 0;
     }
 
     async function handleSave() {
+        if (!validate()) return;
         setSaving(true);
         setSaveError('');
 
@@ -119,8 +133,9 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
         <div className="space-y-6 max-w-2xl mx-auto">
             {/* Image Upload */}
             <section className="bg-white rounded-xl border border-gray-100 p-6">
-                <h2 className="font-semibold text-gray-800 mb-4">Step 1: Upload Images</h2>
+                <h2 className="font-semibold text-gray-800 mb-4">Step 1: Upload Images <span className="text-red-400">*</span></h2>
                 <ImageUploader onImagesChange={handleImagesChange} initialImages={initialData?.images} />
+                {fieldErrors.images && <p className="text-red-400 text-xs mt-1">{fieldErrors.images}</p>}
             </section>
 
             {/* Product Info */}
@@ -128,16 +143,18 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
                 <h2 className="font-semibold text-gray-800 mb-4">Step 2: Product Info</h2>
                 <div className="space-y-3">
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Brand Name 品牌</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Brand Name 品牌 <span className="text-red-400">*</span></label>
                         <input
                             type="text"
                             value={input.brand_name}
                             onChange={(e) => updateField('brand_name', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none"
+                            required
                         />
+                        {fieldErrors.brand_name && <p className="text-red-400 text-xs mt-1">{fieldErrors.brand_name}</p>}
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Product Name 品名</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Product Name 品名 <span className="text-red-400">*</span></label>
                         <input
                             type="text"
                             value={input.product_name}
@@ -145,6 +162,7 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none"
                             required
                         />
+                        {fieldErrors.product_name && <p className="text-red-400 text-xs mt-1">{fieldErrors.product_name}</p>}
                     </div>
                     <div>
                         <label className="block text-xs font-medium text-gray-500 mb-1">Manufacturer 制造商</label>
@@ -165,15 +183,6 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Brand Company 品牌方</label>
-                        <input
-                            type="text"
-                            value={input.brand_company}
-                            onChange={(e) => updateField('brand_company', e.target.value)}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none"
-                        />
-                    </div>
-                    <div>
                         <label className="block text-xs font-medium text-gray-500 mb-1">Ingredients 配料表</label>
                         <textarea
                             rows={4}
@@ -183,16 +192,18 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Category 分类</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Category 分类 <span className="text-red-400">*</span></label>
                         <select
                             value={input.category}
                             onChange={(e) => updateField('category', e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 focus:border-transparent outline-none"
                         >
+                            <option value="">请选择分类</option>
                             {CATEGORIES.map(cat => (
                                 <option key={cat} value={cat}>{cat}</option>
                             ))}
                         </select>
+                        {fieldErrors.category && <p className="text-red-400 text-xs mt-1">{fieldErrors.category}</p>}
                     </div>
                 </div>
             </section>

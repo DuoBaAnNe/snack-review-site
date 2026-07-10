@@ -8,31 +8,34 @@
 @theme inline {
     --color-background: var(--background);
     --color-foreground: var(--foreground);
-    --font-sans: var(--font-geist-sans);
-    --font-mono: var(--font-geist-mono);
 }
 
 body {
     background: var(--background);
     color: var(--foreground);
-    font-family: Arial, Helvetica, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans SC", "Segoe UI", Arial, sans-serif;
 }
 
-@keyframes fall {
+@keyframes fallToButtons {
     0% {
-        transform: translateY(-10vh) translateX(0) rotate(0deg);
+        transform: translateY(-30px) translateX(0) rotate(0deg);
         opacity: 0;
     }
-    5% {
+    10% {
         opacity: 0.7;
     }
-    90% {
-        opacity: 0.6;
+    85% {
+        opacity: 0.5;
     }
     100% {
-        transform: translateY(110vh) translateX(var(--drift, 30px)) rotate(360deg);
+        transform: translateY(calc(100cqh + 60px)) translateX(var(--drift, 30px)) rotate(360deg);
         opacity: 0;
     }
+}
+
+@keyframes catchPulse {
+    0%, 100% { transform: scale(1); }
+    30% { transform: scale(1.03); }
 }
 
 .full-bleed {
@@ -43,10 +46,126 @@ body {
 @keyframes fadeInUp {
     from {
         opacity: 0;
-        transform: translateY(20px);
+        transform: translateY(-80px);
     }
     to {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* Respect the user's reduced-motion system setting */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/*
+ * Dark mode.
+ * - When the visitor picked a theme with the moon/sun button, the server
+ *   renders <html data-theme="dark|light"> from a cookie: the rules below
+ *   under [data-theme="dark"] apply.
+ * - When no choice was made yet, <html> has no data-theme attribute and the
+ *   @media block at the bottom follows the system setting (pure CSS, no JS).
+ * The site is styled with a small set of utility classes, so we remap those
+ * classes to dark equivalents instead of editing every page.
+ */
+
+/* ---- Manually chosen dark theme ---- */
+html[data-theme="dark"] {
+    --background: #12151c;
+    --foreground: #e5e7eb;
+}
+
+[data-theme="dark"] .bg-white { background-color: #1c2230; }
+[data-theme="dark"] .bg-gray-50 { background-color: #12151c; }
+[data-theme="dark"] .bg-gray-100 { background-color: #262d3d; }
+[data-theme="dark"] .bg-gray-200 { background-color: #333b4e; }
+[data-theme="dark"] .bg-amber-50\/30 { background-color: rgba(59, 46, 22, 0.4); }
+[data-theme="dark"] .bg-amber-100 { background-color: #4a3419; }
+[data-theme="dark"] .border-gray-100,
+[data-theme="dark"] .border-gray-200 { border-color: #2e3547; }
+[data-theme="dark"] .border-gray-300 { border-color: #3b4459; }
+[data-theme="dark"] .border-amber-200 { border-color: #5a4632; }
+[data-theme="dark"] .border-amber-200\/60 { border-color: rgba(90, 70, 50, 0.6); }
+[data-theme="dark"] .border-white\/30 { border-color: transparent; }
+[data-theme="dark"] .bg-amber-300\/40 { background-color: transparent; }
+[data-theme="dark"] .text-gray-900 { color: #f3f4f6; }
+[data-theme="dark"] .text-gray-800 { color: #e5e7eb; }
+[data-theme="dark"] .text-gray-700 { color: #d1d5db; }
+[data-theme="dark"] .text-gray-600 { color: #b3bac6; }
+[data-theme="dark"] .text-gray-500 { color: #9ca3af; }
+[data-theme="dark"] .text-gray-400 { color: #7d8697; }
+[data-theme="dark"] .text-gray-300 { color: #5b6472; }
+[data-theme="dark"] .text-gray-200 { color: #3b4459; }
+[data-theme="dark"] .text-orange-600 { color: #fb923c; }
+[data-theme="dark"] .text-amber-700 { color: #fbbf24; }
+[data-theme="dark"] .text-amber-800 { color: #fcd34d; }
+[data-theme="dark"] .text-amber-800\/70 { color: rgba(252, 211, 77, 0.7); }
+[data-theme="dark"] .text-amber-900 { color: #fcd34d; }
+[data-theme="dark"] .text-amber-900\/60 { color: rgba(252, 211, 77, 0.65); }
+[data-theme="dark"] .bg-white\/70 { background-color: rgba(255, 255, 255, 0.14); }
+[data-theme="dark"] .bg-white\/50 { background-color: rgba(255, 255, 255, 0.14); }
+[data-theme="dark"] .bg-white\/40 { background-color: rgba(255, 255, 255, 0.12); }
+[data-theme="dark"] .bg-white\/30 { background-color: rgba(255, 255, 255, 0.10); }
+[data-theme="dark"] .bg-white\/20 { background-color: rgba(255, 255, 255, 0.08); }
+[data-theme="dark"] .from-amber-100 { --tw-gradient-from: #2f2318; }
+[data-theme="dark"] .via-orange-50 { --tw-gradient-via: #251b15; }
+[data-theme="dark"] .to-rose-100 { --tw-gradient-to: #2c1a22; }
+[data-theme="dark"] .from-amber-100\/60 { --tw-gradient-from: rgba(47, 35, 24, 0.85); }
+[data-theme="dark"] .via-orange-50\/60 { --tw-gradient-via: rgba(37, 27, 21, 0.85); }
+[data-theme="dark"] .to-rose-100\/60 { --tw-gradient-to: rgba(44, 26, 34, 0.85); }
+[data-theme="dark"] .from-rose-100\/50 { --tw-gradient-from: rgba(44, 26, 34, 0.6); }
+[data-theme="dark"] .to-gray-50 { --tw-gradient-to: #12151c; }
+
+/* ---- No choice yet: follow the system night setting ---- */
+@media (prefers-color-scheme: dark) {
+    html:not([data-theme]) {
+        --background: #12151c;
+        --foreground: #e5e7eb;
+    }
+
+    html:not([data-theme]) .bg-white { background-color: #1c2230; }
+    html:not([data-theme]) .bg-gray-50 { background-color: #12151c; }
+    html:not([data-theme]) .bg-gray-100 { background-color: #262d3d; }
+    html:not([data-theme]) .bg-gray-200 { background-color: #333b4e; }
+    html:not([data-theme]) .bg-amber-50\/30 { background-color: rgba(59, 46, 22, 0.4); }
+    html:not([data-theme]) .bg-amber-100 { background-color: #4a3419; }
+    html:not([data-theme]) .border-gray-100,
+    html:not([data-theme]) .border-gray-200 { border-color: #2e3547; }
+    html:not([data-theme]) .border-gray-300 { border-color: #3b4459; }
+    html:not([data-theme]) .border-amber-200 { border-color: #5a4632; }
+    html:not([data-theme]) .border-amber-200\/60 { border-color: rgba(90, 70, 50, 0.6); }
+    html:not([data-theme]) .border-white\/30 { border-color: transparent; }
+    html:not([data-theme]) .bg-amber-300\/40 { background-color: transparent; }
+    html:not([data-theme]) .text-gray-900 { color: #f3f4f6; }
+    html:not([data-theme]) .text-gray-800 { color: #e5e7eb; }
+    html:not([data-theme]) .text-gray-700 { color: #d1d5db; }
+    html:not([data-theme]) .text-gray-600 { color: #b3bac6; }
+    html:not([data-theme]) .text-gray-500 { color: #9ca3af; }
+    html:not([data-theme]) .text-gray-400 { color: #7d8697; }
+    html:not([data-theme]) .text-gray-300 { color: #5b6472; }
+    html:not([data-theme]) .text-gray-200 { color: #3b4459; }
+    html:not([data-theme]) .text-orange-600 { color: #fb923c; }
+    html:not([data-theme]) .text-amber-700 { color: #fbbf24; }
+    html:not([data-theme]) .text-amber-800 { color: #fcd34d; }
+    html:not([data-theme]) .text-amber-800\/70 { color: rgba(252, 211, 77, 0.7); }
+    html:not([data-theme]) .text-amber-900 { color: #fcd34d; }
+    html:not([data-theme]) .text-amber-900\/60 { color: rgba(252, 211, 77, 0.65); }
+    html:not([data-theme]) .bg-white\/70 { background-color: rgba(255, 255, 255, 0.14); }
+    html:not([data-theme]) .bg-white\/50 { background-color: rgba(255, 255, 255, 0.14); }
+    html:not([data-theme]) .bg-white\/40 { background-color: rgba(255, 255, 255, 0.12); }
+    html:not([data-theme]) .bg-white\/30 { background-color: rgba(255, 255, 255, 0.10); }
+    html:not([data-theme]) .bg-white\/20 { background-color: rgba(255, 255, 255, 0.08); }
+    html:not([data-theme]) .from-amber-100 { --tw-gradient-from: #2f2318; }
+    html:not([data-theme]) .via-orange-50 { --tw-gradient-via: #251b15; }
+    html:not([data-theme]) .to-rose-100 { --tw-gradient-to: #2c1a22; }
+    html:not([data-theme]) .from-amber-100\/60 { --tw-gradient-from: rgba(47, 35, 24, 0.85); }
+    html:not([data-theme]) .via-orange-50\/60 { --tw-gradient-via: rgba(37, 27, 21, 0.85); }
+    html:not([data-theme]) .to-rose-100\/60 { --tw-gradient-to: rgba(44, 26, 34, 0.85); }
+    html:not([data-theme]) .from-rose-100\/50 { --tw-gradient-from: rgba(44, 26, 34, 0.6); }
+    html:not([data-theme]) .to-gray-50 { --tw-gradient-to: #12151c; }
 }

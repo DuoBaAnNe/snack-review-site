@@ -34,8 +34,14 @@ export default function SearchModal({ snacks, onClose }: Props) {
         : [];
 
     return (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-[15vh]">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[70vh] flex flex-col">
+        <div
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-start justify-center pt-[15vh]"
+            onClick={onClose}
+        >
+            <div
+                className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[70vh] flex flex-col"
+                onClick={(e) => e.stopPropagation()}
+            >
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200">
                     <span className="text-lg">🔍</span>
                     <input
@@ -44,7 +50,7 @@ export default function SearchModal({ snacks, onClose }: Props) {
                         value={query}
                         onChange={(e) => setQuery(e.target.value)}
                         placeholder="搜索品牌、产品、配料..."
-                        className="flex-1 text-sm py-2 outline-none"
+                        className="flex-1 text-sm py-2 outline-none bg-transparent"
                     />
                     <button
                         onClick={onClose}

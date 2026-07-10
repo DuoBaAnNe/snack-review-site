@@ -43,7 +43,7 @@ export default function SnackDetail({ snack, related }: Props) {
                 <div className="flex flex-col md:flex-row">
                     {/* Image */}
                     <div className="md:w-[400px] shrink-0">
-                        <ImageCarousel images={snack.images} />
+                        <ImageCarousel images={snack.images} alt={snack.product_name} />
                     </div>
                     {/* Header info */}
                     <div className="p-6 flex flex-col justify-center flex-1">

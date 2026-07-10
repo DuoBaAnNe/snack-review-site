@@ -27,6 +27,9 @@ export default function AdminNav() {
                 <Link href="/admin/new" className={linkClass('/admin/new')}>
                     + Add Snack
                 </Link>
+                <Link href="/admin/recycle" className={linkClass('/admin/recycle')}>
+                    回收站
+                </Link>
                 <Link href="/news" className={linkClass('/news')}>
                     零食新闻
                 </Link>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
 interface SnackRef {
@@ -16,36 +16,43 @@ interface IngredientEntry {
     snacks: SnackRef[];
 }
 
-const ADDITIVE_KNOWLEDGE: Record<string, string> = {
-    '苯甲酸钠': '防腐剂，广泛应用于碳酸饮料和酱料，在规定剂量内安全。',
-    '山梨酸钾': '常见防腐剂，毒性低于苯甲酸钠，用于乳制品、烘焙食品。',
-    '阿斯巴甜': '人工甜味剂，甜度为蔗糖的200倍，苯丙酮尿症患者需避免。',
-    '安赛蜜': '人工甜味剂，不被人体代谢，常与阿斯巴甜复配使用。',
-    '甜蜜素': '人工甜味剂，部分国家禁用。国家食品安全标准有严格限量。',
-    '柠檬酸': '酸度调节剂，广泛存在于柑橘类水果中，用于调节食品酸度。',
-    '谷氨酸钠': '即味精的化学成分，用于提鲜。WHO和FAO均认定安全。',
-    '特丁基对苯二酚': '即TBHQ，抗氧化剂，用于油脂防腐。超量摄入有风险。',
-    '二氧化钛': '白色素/增白剂，2022年起欧盟禁用。国内部分食品仍使用。',
-    '焦亚硫酸钠': '漂白剂/防腐剂，用于果脯蜜饯，过量可能引起过敏反应。',
-    '碳酸氢钠': '即小苏打，膨松剂，用于烘焙食品使口感松软。安全性高。',
-    '黄原胶': '增稠剂/稳定剂，由微生物发酵产生，用于改善食品质地。',
-};
+interface InfoResult {
+    title: string;
+    summary: string;
+    url: string;
+    source: string;
+    matched: string;
+}
 
 export default function IngredientsView({
-    ingredients,
-    totalSnacks,
-}: {
-    ingredients: IngredientEntry[];
-    totalSnacks: number;
-}) {
+    ingredients, totalSnacks,
+}: { ingredients: IngredientEntry[]; totalSnacks: number }) {
     const [selected, setSelected] = useState<IngredientEntry | null>(null);
     const [search, setSearch] = useState('');
+    const [info, setInfo] = useState<InfoResult | null>(null);
+    const [loading, setLoading] = useState(false);
+
+    const fetchInfo = useCallback(async (name: string) => {
+        setLoading(true);
+        setInfo(null);
+        try {
+            const res = await fetch(`/api/ingredient-info?name=${encodeURIComponent(name)}`);
+            if (res.ok) {
+                const data = await res.json();
+                if (data) setInfo(data);
+            }
+        } catch { /* ignore */ }
+        setLoading(false);
+    }, []);
+
+    useEffect(() => {
+        if (selected) fetchInfo(selected.name);
+    }, [selected, fetchInfo]);
 
     const filtered = search.trim()
         ? ingredients.filter((i) => i.name.includes(search.trim()))
         : ingredients;
 
-    // Top 50 for display, rest via search
     const displayed = search.trim() ? filtered.slice(0, 100) : ingredients.slice(0, 50);
 
     function getFrequencyColor(count: number): string {
@@ -58,7 +65,6 @@ export default function IngredientsView({
 
     return (
         <div>
-            {/* Search */}
             <div className="mb-6">
                 <input
                     type="text"
@@ -69,7 +75,7 @@ export default function IngredientsView({
                 />
             </div>
 
-            {/* Ingredient Tags */}
+            {/* Tags */}
             <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
                 <h2 className="text-sm font-semibold text-gray-800 mb-4">
                     {search ? `搜索结果 (${displayed.length})` : `高频配料 Top ${displayed.length}`}
@@ -90,75 +96,74 @@ export default function IngredientsView({
                         </button>
                     ))}
                 </div>
-                {!search && ingredients.length > 50 && (
-                    <p className="text-xs text-gray-400 mt-4">
-                        显示出现频率最高的50种配料，使用搜索框查找更多
-                    </p>
-                )}
             </div>
 
-            {/* Selected Ingredient Detail */}
+            {/* Detail card */}
             {selected && (
                 <div className="bg-white rounded-xl border border-gray-100 p-6 mb-6">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-1">
-                        {selected.name}
-                    </h2>
+                    <h2 className="text-lg font-semibold text-gray-900 mb-1">{selected.name}</h2>
                     <p className="text-sm text-gray-500 mb-4">
                         出现在 {selected.count} 款零食中（占比 {(selected.count / totalSnacks * 100).toFixed(1)}%）
                     </p>
 
-                    {/* Knowledge card */}
-                    {ADDITIVE_KNOWLEDGE[selected.name] && (
-                        <div className="bg-blue-50 border border-blue-100 rounded-lg p-3 mb-4">
-                            <span className="text-xs font-medium text-blue-600">📖 科普</span>
-                            <p className="text-xs text-blue-700 mt-1">{ADDITIVE_KNOWLEDGE[selected.name]}</p>
+                    {/* Info card */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                        <div className="flex items-center gap-2 mb-2">
+                            <span className="text-xs font-semibold text-blue-700">
+                                {loading ? '📖 搜索中...' : info?.source === '内置知识库' ? '📖 成分科普' : info?.source === 'baidu' ? '📖 百度百科' : info?.source === 'wikipedia' ? '📖 维基百科' : '📖 成分科普'}
+                            </span>
+                            {info && info.matched !== selected.name && (
+                                <span className="text-xs text-blue-500 bg-blue-100 px-2 py-0.5 rounded-full">
+                                    匹配: {info.matched}
+                                </span>
+                            )}
                         </div>
-                    )}
+                        {info ? (
+                            <>
+                                <p className="text-sm text-blue-800 leading-relaxed">{info.summary}</p>
+                                <a href={info.url} target="_blank" rel="noopener noreferrer"
+                                    className="inline-block mt-3 text-xs text-blue-500 hover:text-blue-700 underline">
+                                    在{info.source === '内置知识库' ? '百度百科' : info.source === 'baidu' ? '百度百科' : '维基百科'}阅读全文 →
+                                </a>
+                            </>
+                        ) : loading ? (
+                            <div className="space-y-2 animate-pulse">
+                                <div className="h-3 bg-blue-200 rounded w-3/4" />
+                                <div className="h-3 bg-blue-200 rounded w-full" />
+                                <div className="h-3 bg-blue-200 rounded w-2/3" />
+                            </div>
+                        ) : (
+                            <div>
+                                <p className="text-sm text-blue-700 mb-3">
+                                    未找到该成分信息，尝试以下来源：
+                                </p>
+                                <div className="flex flex-wrap gap-2">
+                                    <a href={`https://baike.baidu.com/item/${encodeURIComponent(selected.name)}`} target="_blank" rel="noopener noreferrer"
+                                        className="text-xs px-3 py-1 bg-white border border-blue-200 rounded-full text-blue-600 hover:bg-blue-100 transition-colors">
+                                        百度百科
+                                    </a>
+                                    <a href={`https://en.wikipedia.org/wiki/${encodeURIComponent(selected.name)}`} target="_blank" rel="noopener noreferrer"
+                                        className="text-xs px-3 py-1 bg-white border border-blue-200 rounded-full text-blue-600 hover:bg-blue-100 transition-colors">
+                                        Wikipedia
+                                    </a>
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
-                    {/* Snacks with this ingredient */}
+                    {/* Snacks list */}
                     <h3 className="text-sm font-semibold text-gray-800 mb-3">含此配料的零食：</h3>
                     <div className="space-y-2">
                         {selected.snacks.map((s) => (
-                            <Link
-                                key={s.id}
-                                href={`/snacks/${s.id}`}
-                                className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg hover:bg-amber-50 transition-colors"
-                            >
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 shrink-0">
-                                    {s.category}
-                                </span>
+                            <Link key={s.id} href={`/snacks/${s.id}`}
+                                className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-lg hover:bg-amber-50 transition-colors">
+                                <span className="text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-500 shrink-0">{s.category}</span>
                                 <span className="text-sm text-gray-700">
                                     {s.brand_name && <span className="text-orange-500">{s.brand_name} · </span>}
                                     {s.product_name}
                                 </span>
                             </Link>
                         ))}
-                    </div>
-                </div>
-            )}
-
-            {/* Stats */}
-            {!selected && !search && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-                        <div className="text-2xl font-bold text-orange-500">{ingredients.length}</div>
-                        <div className="text-xs text-gray-400 mt-1">配料种类</div>
-                    </div>
-                    <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-                        <div className="text-2xl font-bold text-orange-500">{totalSnacks}</div>
-                        <div className="text-xs text-gray-400 mt-1">零食总数</div>
-                    </div>
-                    <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-                        <div className="text-2xl font-bold text-orange-500">
-                            {ingredients.filter((i) => i.count >= totalSnacks * 0.25).length}
-                        </div>
-                        <div className="text-xs text-gray-400 mt-1">高频配料（≥25%）</div>
-                    </div>
-                    <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
-                        <div className="text-2xl font-bold text-orange-500">
-                            {Object.keys(ADDITIVE_KNOWLEDGE).filter((k) => ingredients.some((i) => i.name === k)).length}
-                        </div>
-                        <div className="text-xs text-gray-400 mt-1">已知添加剂</div>
                     </div>
                 </div>
             )}

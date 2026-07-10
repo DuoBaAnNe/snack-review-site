@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useRouter, usePathname } from 'next/navigation';
+import ThemeToggle from './ThemeToggle';
 
 interface UserInfo {
     id: number;
@@ -10,71 +10,107 @@ interface UserInfo {
     username: string;
 }
 
+function truncateUsername(name: string): string {
+    if (name.length <= 4) return name;
+    return name.slice(0, 4) + '...';
+}
+
 export default function HeaderButtons() {
     const router = useRouter();
+    const pathname = usePathname();
     const [user, setUser] = useState<UserInfo | null | undefined>(undefined);
+    const [adminUser, setAdminUser] = useState<string | null | undefined>(undefined);
 
     useEffect(() => {
-        fetch('/api/auth/user/check')
-            .then(res => res.json())
-            .then(data => {
-                setUser(data.authenticated ? data.user : null);
-            })
-            .catch(() => setUser(null));
-    }, []);
+        Promise.all([
+            fetch('/api/auth/user/check').then(r => r.json()),
+            fetch('/api/auth/check').then(r => r.json()),
+        ]).then(([userData, adminData]) => {
+            setUser(userData.authenticated ? userData.user : null);
+            setAdminUser(adminData.authenticated ? '西瓜Naive' : null);
+        }).catch(() => {
+            setUser(null);
+            setAdminUser(null);
+        });
+    }, [pathname]);
 
-    async function handleLogout() {
+    async function handleUserLogout() {
         await fetch('/api/auth/user/logout', { method: 'POST' });
         setUser(null);
         router.refresh();
     }
 
-    if (user === undefined) return null;
+    async function handleAdminLogout() {
+        await fetch('/api/auth/logout', { method: 'POST' });
+        setAdminUser(null);
+        router.refresh();
+    }
+
+    if (user === undefined && adminUser === undefined) return null;
+
+    const btnBase = 'flex-1 min-w-0 md:min-w-[80px] px-1.5 md:px-3 py-2.5 text-xs md:text-sm font-medium text-center whitespace-nowrap transition-colors border-r border-white/30 last:border-r-0';
+    const btnInactive = 'text-amber-900/60 hover:bg-white/20 hover:text-amber-900';
+
+    const isLoggedIn = !!user || !!adminUser;
+    const displayName = adminUser || (user ? truncateUsername(user.username) : null);
 
     return (
-        <div className="flex items-center justify-between px-4 py-2 bg-gradient-to-r from-amber-100/60 via-orange-50/60 to-rose-100/60 border-b border-orange-100">
-            <div className="flex items-center gap-2 flex-wrap">
-                <Link
-                    href="/"
-                    className="px-3 py-1 rounded-full bg-white/70 text-gray-600 hover:text-orange-500 border border-gray-200 transition-colors text-sm"
-                >
-                    返回首页
-                </Link>
-            </div>
-            <div className="flex items-center gap-2 flex-wrap">
-                {user ? (
-                    <>
-                        <span className="text-sm text-gray-600 font-medium">{user.username}</span>
-                        <Link
-                            href="/add-snack"
-                            className="px-3 py-1 rounded-full bg-white/70 text-orange-500 hover:text-orange-600 border border-orange-200 transition-colors text-sm"
-                        >
-                            添加零食
-                        </Link>
-                        <button
-                            onClick={handleLogout}
-                            className="px-3 py-1 rounded-full bg-white/70 text-gray-500 hover:text-red-500 border border-gray-200 transition-colors text-sm cursor-pointer"
-                        >
-                            退出
-                        </button>
-                    </>
-                ) : (
-                    <>
-                        <button
-                            onClick={() => { router.push('/login'); router.refresh(); }}
-                            className="px-3 py-1 rounded-full bg-white/70 text-gray-600 hover:text-orange-500 border border-gray-200 transition-colors text-sm cursor-pointer"
-                        >
-                            登录
-                        </button>
-                        <button
-                            onClick={() => { router.push('/login?register=true'); router.refresh(); }}
-                            className="px-3 py-1 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 text-white hover:opacity-90 transition-opacity text-sm cursor-pointer"
-                        >
-                            注册
-                        </button>
-                    </>
-                )}
-            </div>
+        <div className="flex flex-nowrap overflow-x-auto bg-gradient-to-b from-amber-100/60 via-orange-50/60 to-rose-100/60">
+            <button
+                onClick={async () => { await router.push('/'); }}
+                className={`${btnBase} ${btnInactive}`}
+            >
+                返回首页
+            </button>
+
+            {isLoggedIn ? (
+                <>
+                    <span className={`${btnBase} text-amber-900 font-bold bg-white/30`} title={displayName || ''}>
+                        {displayName}
+                    </span>
+                    <button
+                        onClick={async () => { await router.push('/add-snack'); }}
+                        className={`${btnBase} ${btnInactive}`}
+                    >
+                        添加零食
+                    </button>
+                    <button
+                        onClick={async () => { await router.push('/my-snacks'); }}
+                        className={`${btnBase} ${btnInactive}`}
+                    >
+                        我的零食
+                    </button>
+                    <button
+                        onClick={async () => { await router.push('/my-map'); }}
+                        className={`${btnBase} ${btnInactive}`}
+                    >
+                        我的地图
+                    </button>
+                    <button
+                        onClick={adminUser ? handleAdminLogout : handleUserLogout}
+                        className={`${btnBase} ${btnInactive}`}
+                    >
+                        退出
+                    </button>
+                </>
+            ) : (
+                <>
+                    <button
+                        onClick={() => { window.location.href = '/login'; }}
+                        className={`${btnBase} ${btnInactive}`}
+                    >
+                        登录
+                    </button>
+                    <button
+                        onClick={() => { window.location.href = '/login?register=true'; }}
+                        className={`${btnBase} ${btnInactive}`}
+                    >
+                        注册
+                    </button>
+                </>
+            )}
+
+            <ThemeToggle className={`${btnBase} ${btnInactive} max-w-[56px]`} />
         </div>
     );
 }

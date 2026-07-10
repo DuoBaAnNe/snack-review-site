@@ -9,7 +9,19 @@ const TURSO_TOKEN = process.env.TURSO_AUTH_TOKEN || '';
 let client: ReturnType<typeof createClient>;
 let initPromise: Promise<void> | null = null;
 
-async function getDb() {
+// In-memory cache for frequently accessed queries
+const cache = new Map<string, { data: any; expires: number }>();
+function getCached<T>(key: string, ttlMs: number): T | null {
+    const entry = cache.get(key);
+    if (entry && Date.now() < entry.expires) return entry.data as T;
+    cache.delete(key);
+    return null;
+}
+function setCache(key: string, data: any, ttlMs: number) {
+    cache.set(key, { data, expires: Date.now() + ttlMs });
+}
+
+export async function getDb() {
     if (!client) {
         if (TURSO_URL) {
             client = createClient({ url: TURSO_URL, authToken: TURSO_TOKEN });
@@ -19,12 +31,26 @@ async function getDb() {
         if (client instanceof Promise) {
             client = await client;
         }
-        initPromise = initSchema();
+        initPromise = initSchema().then(async () => {
+            // Seed admin immediately after schema creation.
+            // Hash can be overridden without a code change via ADMIN_PASSWORD_HASH.
+            const HASH = process.env.ADMIN_PASSWORD_HASH
+                || '$2b$10$SzkjFVgLmN60pMEaukJXG.7kLjmoDRDYapAjrQ6BBQzb3Wtlabj3G';
+            try {
+                const result = await client.execute("SELECT id FROM admin_users WHERE id = 1");
+                if (result.rows.length === 0) {
+                    await client.execute("INSERT INTO admin_users (id, username, password_hash) VALUES (1, '西瓜Naive', ?)", [HASH]);
+                } else {
+                    await client.execute("UPDATE admin_users SET username = '西瓜Naive', password_hash = ? WHERE id = 1", [HASH]);
+                }
+            } catch (e: any) {
+                console.error('[admin-seed]', e?.message || e);
+            }
+        }).catch(e => {
+            console.error('[init]', e?.message || e);
+        });
     }
-    if (initPromise) {
-        await initPromise;
-        initPromise = null;
-    }
+    await initPromise;
     return client;
 }
 
@@ -32,7 +58,11 @@ async function initSchema() {
     const schema = fs.readFileSync(
         path.join(process.cwd(), 'database', 'schema.sql'), 'utf-8'
     );
-    await client.executeMultiple(schema);
+    try {
+        await client.executeMultiple(schema);
+    } catch (e: any) {
+        console.error('[initSchema] executeMultiple error:', e?.message || e);
+    }
 
     // Run migration for base64 columns (use execute, not executeMultiple, for ALTER TABLE on Turso)
     try {
@@ -54,11 +84,6 @@ async function initSchema() {
             console.error('Migration error (mime_type column):', e);
         }
     }
-
-    await client.execute(
-        "INSERT OR IGNORE INTO admin_users (id, username, password_hash) VALUES (1, 'admin', ?)",
-        [require('bcryptjs').hashSync(process.env.ADMIN_PASSWORD || 'admin123', 10)]
-    );
 
     // --- Migration v2: new ratings, category, review_text, users, reviews, news ---
     try {
@@ -107,35 +132,94 @@ async function initSchema() {
     } catch (e: any) {
         console.error('Migration v3 file error:', e);
     }
+
+    // --- Migration v4: update admin username to 西瓜Naive ---
+    try {
+        await client.execute("UPDATE admin_users SET username = '西瓜Naive' WHERE username = 'admin'");
+    } catch (e: any) {
+        console.error('Migration v4 error:', e);
+    }
+    try {
+        await client.execute("UPDATE snacks SET created_by = '西瓜Naive' WHERE created_by = 'admin' OR created_by = ''");
+    } catch (e: any) {
+        console.error('Migration v4 error:', e);
+    }
+
+    // --- Migration v5: soft-delete column for recycle bin ---
+    try {
+        await client.execute("ALTER TABLE snacks ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
+    } catch (e: any) {
+        if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) {
+            console.error('Migration v5 error:', e);
+        }
+    }
 }
 
 // --- Snack queries ---
 
-export async function getAllSnacks(): Promise<Snack[]> {
+export async function getAllSnacks(includeDeleted = false): Promise<Snack[]> {
+    const cacheKey = includeDeleted ? 'snacks_all_deleted' : 'snacks_all';
+    const cached = getCached<Snack[]>(cacheKey, 10_000); // 10s TTL
+    if (cached) return cached;
+
     const db = await getDb();
-    const result = await db.execute('SELECT * FROM snacks ORDER BY created_at DESC');
+    const sql = includeDeleted
+        ? 'SELECT * FROM snacks ORDER BY created_at DESC'
+        : 'SELECT * FROM snacks WHERE deleted = 0 ORDER BY created_at DESC';
+    const result = await db.execute(sql);
     const snacks = result.rows.map(rowToSnack);
-    for (const snack of snacks) {
-        const imgResult = await db.execute(
-            'SELECT * FROM snack_images WHERE snack_id = ? ORDER BY sort_order ASC',
-            [snack.id]
-        );
-        snack.images = imgResult.rows.map(rowToImage);
+    if (snacks.length === 0) return snacks;
+    // Fetch all images in one query instead of N+1
+    const allImages = await db.execute(
+        'SELECT * FROM snack_images ORDER BY sort_order ASC'
+    );
+    const imagesBySnack = new Map<number, any[]>();
+    for (const row of allImages.rows) {
+        const sid = row.snack_id as number;
+        if (!imagesBySnack.has(sid)) imagesBySnack.set(sid, []);
+        imagesBySnack.get(sid)!.push(rowToImage(row));
     }
+    for (const snack of snacks) {
+        snack.images = imagesBySnack.get(snack.id) || [];
+    }
+    // Attach review counts in one grouped query
+    try {
+        const counts = await db.execute(
+            'SELECT snack_id, COUNT(*) AS cnt FROM reviews GROUP BY snack_id'
+        );
+        const countBySnack = new Map<number, number>();
+        for (const row of counts.rows) {
+            countBySnack.set(row.snack_id as number, Number(row.cnt));
+        }
+        for (const snack of snacks) {
+            snack.review_count = countBySnack.get(snack.id) || 0;
+        }
+    } catch (e: any) {
+        console.error('[review-count]', e?.message || e);
+    }
+    setCache(cacheKey, snacks, 10_000);
     return snacks;
 }
 
 export async function getSnackById(id: number): Promise<Snack | undefined> {
     const db = await getDb();
-    const result = await db.execute('SELECT * FROM snacks WHERE id = ?', [id]);
-    if (result.rows.length === 0) return undefined;
-    const snack = rowToSnack(result.rows[0]);
-    const imgResult = await db.execute(
-        'SELECT * FROM snack_images WHERE snack_id = ? ORDER BY sort_order ASC',
-        [id]
-    );
+    const [snackResult, imgResult] = await Promise.all([
+        db.execute('SELECT * FROM snacks WHERE id = ?', [id]),
+        db.execute('SELECT * FROM snack_images WHERE snack_id = ? ORDER BY sort_order ASC', [id]),
+    ]);
+    if (snackResult.rows.length === 0) return undefined;
+    const snack = rowToSnack(snackResult.rows[0]);
     snack.images = imgResult.rows.map(rowToImage);
     return snack;
+}
+
+export async function checkSnackDuplicate(brandName: string, productName: string): Promise<boolean> {
+    const db = await getDb();
+    const result = await db.execute(
+        'SELECT id FROM snacks WHERE brand_name = ? AND product_name = ? LIMIT 1',
+        [brandName, productName]
+    );
+    return result.rows.length > 0;
 }
 
 export async function createSnack(input: CreateSnackInput, createdBy: string = ''): Promise<Snack> {
@@ -162,7 +246,13 @@ export async function createSnack(input: CreateSnackInput, createdBy: string = '
     if (input.image_ids.length > 0) {
         await linkImagesToSnack(id, input.image_ids);
     }
+    invalidateCache();
     return (await getSnackById(id))!;
+}
+
+function invalidateCache() {
+    cache.delete('snacks_all');
+    cache.delete('snacks_all_deleted');
 }
 
 export async function updateSnack(id: number, input: CreateSnackInput): Promise<Snack | undefined> {
@@ -189,13 +279,26 @@ export async function updateSnack(id: number, input: CreateSnackInput): Promise<
     if (input.image_ids.length > 0) {
         await linkImagesToSnack(id, input.image_ids);
     }
+    invalidateCache();
     return getSnackById(id);
 }
 
 export async function deleteSnack(id: number): Promise<boolean> {
     const db = await getDb();
-    const result = await db.execute('DELETE FROM snacks WHERE id = ?', [id]);
+    const result = await db.execute('UPDATE snacks SET deleted = 1 WHERE id = ?', [id]);
+    if (result.rowsAffected > 0) invalidateCache();
     return result.rowsAffected > 0;
+}
+
+export async function restoreSnack(id: number): Promise<boolean> {
+    const db = await getDb();
+    const result = await db.execute('UPDATE snacks SET deleted = 0 WHERE id = ?', [id]);
+    if (result.rowsAffected > 0) invalidateCache();
+    return result.rowsAffected > 0;
+}
+
+export async function getDeletedSnacks(): Promise<Snack[]> {
+    return getAllSnacks(true).then(all => all.filter(s => (s as any).deleted === 1));
 }
 
 // --- Image queries ---
@@ -313,6 +416,23 @@ export async function canRegisterFromIp(ip: string): Promise<boolean> {
     return result.rows.length === 0;
 }
 
+export async function getSnacksByCreator(username: string): Promise<Snack[]> {
+    const db = await getDb();
+    const result = await db.execute(
+        'SELECT * FROM snacks WHERE created_by = ? ORDER BY created_at DESC',
+        [username]
+    );
+    const snacks = result.rows.map(rowToSnack);
+    for (const snack of snacks) {
+        const imgResult = await db.execute(
+            'SELECT * FROM snack_images WHERE snack_id = ? ORDER BY sort_order ASC',
+            [snack.id]
+        );
+        snack.images = imgResult.rows.map(rowToImage);
+    }
+    return snacks;
+}
+
 export async function countUserSnacksToday(username: string): Promise<number> {
     const db = await getDb();
     const result = await db.execute(
@@ -364,6 +484,7 @@ export async function createReview(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [userId, snackId, ratings.taste, ratings.ingredients, ratings.packaging, ratings.useCase, ratings.value, reviewText]
     );
+    invalidateCache();
     const rows = await db.execute('SELECT * FROM reviews WHERE id = ?', [Number(result.lastInsertRowid)]);
     return rowToReview(rows.rows[0]);
 }
@@ -375,6 +496,13 @@ export async function getReviewsBySnackId(snackId: number): Promise<import('@/ty
         [snackId]
     );
     return result.rows.map(rowToReview);
+}
+
+export async function deleteReview(reviewId: number): Promise<boolean> {
+    const db = await getDb();
+    const result = await db.execute('DELETE FROM reviews WHERE id = ?', [reviewId]);
+    if (result.rowsAffected > 0) invalidateCache();
+    return result.rowsAffected > 0;
 }
 
 function rowToReview(row: any): import('@/types').Review {

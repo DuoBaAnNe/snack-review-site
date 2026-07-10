@@ -26,6 +26,7 @@ export interface Snack {
     created_at: string;
     updated_at: string;
     images: SnackImage[];
+    review_count?: number;
 }
 
 export interface AnalysisResult {

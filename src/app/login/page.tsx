@@ -35,8 +35,7 @@ function LoginForm() {
         setLoading(false);
 
         if (res.ok) {
-            router.push('/');
-            router.refresh();
+            await router.push('/');
         } else {
             setError(data.error || '操作失败');
         }

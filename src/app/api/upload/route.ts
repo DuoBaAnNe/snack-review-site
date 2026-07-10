@@ -2,9 +2,12 @@ import { NextResponse } from 'next/server';
 import { getSession } from '@/lib/auth';
 import { getUserSession } from '@/lib/user-auth';
 import { createImage } from '@/lib/db';
+import { rateLimit } from '@/lib/rate-limit';
 
 const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_FILES_PER_REQUEST = 10;
+const MAX_FILES_PER_DAY = 40;
 
 export async function POST(request: Request) {
     const adminSession = await getSession();
@@ -19,6 +22,14 @@ export async function POST(request: Request) {
 
     if (files.length === 0) {
         return NextResponse.json({ error: 'No images provided' }, { status: 400 });
+    }
+    if (files.length > MAX_FILES_PER_REQUEST) {
+        return NextResponse.json({ error: `一次最多上传${MAX_FILES_PER_REQUEST}张图片` }, { status: 400 });
+    }
+
+    // Daily quota per account (admins included — protects the database)
+    if (!rateLimit(`upload:${session.username}`, MAX_FILES_PER_DAY, 24 * 60 * 60 * 1000, files.length)) {
+        return NextResponse.json({ error: '今日上传图片数量已达上限' }, { status: 429 });
     }
 
     const results = [];
@@ -47,7 +58,7 @@ export async function POST(request: Request) {
         } catch (e: any) {
             console.error('Upload error:', e);
             return NextResponse.json(
-                { error: `Upload failed: ${e.message || 'Unknown error'}` },
+                { error: '上传失败，请稍后重试' },
                 { status: 500 }
             );
         }

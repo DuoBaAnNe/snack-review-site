@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAllSnacks, createSnack, countUserSnacksToday } from '@/lib/db';
+import { getAllSnacks, createSnack, countUserSnacksToday, checkSnackDuplicate } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { getUserSession } from '@/lib/user-auth';
 import type { CreateSnackInput } from '@/types';
@@ -40,11 +40,18 @@ export async function POST(request: Request) {
             }
         }
 
+        // Check for duplicate snack (same brand + product name)
+        const isDuplicate = await checkSnackDuplicate(input.brand_name?.trim() || '', input.product_name?.trim() || '');
+        if (isDuplicate) {
+            return NextResponse.json({ error: '零食已存在，请勿重复上传' }, { status: 409 });
+        }
+
         const createdBy = session.username;
         const snack = await createSnack(input, createdBy);
         return NextResponse.json(snack, { status: 201 });
     } catch (e: any) {
+        // Log details server-side only — do not leak internals to the client
         console.error('POST /api/snacks error:', e.message, e);
-        return NextResponse.json({ error: e.message || 'Server error' }, { status: 500 });
+        return NextResponse.json({ error: '服务器错误，请稍后重试' }, { status: 500 });
     }
 }

@@ -17,8 +17,10 @@ export async function POST(request: Request) {
         const result = await analyzeSnackImage(base64Data, mimeType || 'image/jpeg');
         return NextResponse.json(result);
     } catch (error) {
+        // Log the details server-side only — do not leak internals to the client
+        console.error('AI analysis failed:', error);
         return NextResponse.json(
-            { error: 'AI analysis failed', details: String(error) },
+            { error: 'AI 识别失败，请稍后重试' },
             { status: 500 }
         );
     }

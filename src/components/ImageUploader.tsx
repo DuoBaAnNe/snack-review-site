@@ -35,20 +35,14 @@ export default function ImageUploader({ onImagesChange, initialImages }: Props) 
     }, [onImagesChange]);
 
     async function resizeImage(file: File): Promise<File> {
-        const MAX_PX = 2048;
-        const MAX_BYTES = 3.5 * 1024 * 1024; // must be under Vercel's 4.5MB limit
+        const MAX_PX = 1600;
+        const QUALITY = 0.80;
 
         return new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
                 let { width, height } = img;
-                const needsResize = file.size > MAX_BYTES || width > MAX_PX || height > MAX_PX;
-
-                if (!needsResize) {
-                    resolve(file);
-                    return;
-                }
-
+                // Always re-encode for smaller size
                 if (width > MAX_PX) { height = Math.round(height * MAX_PX / width); width = MAX_PX; }
                 if (height > MAX_PX) { width = Math.round(width * MAX_PX / height); height = MAX_PX; }
 
@@ -57,9 +51,18 @@ export default function ImageUploader({ onImagesChange, initialImages }: Props) 
                 canvas.height = height;
                 const ctx = canvas.getContext('2d')!;
                 ctx.drawImage(img, 0, 0, width, height);
+                // Use WebP for better compression; fallback to JPEG if unsupported
+                const mimeType = 'image/webp';
                 canvas.toBlob((blob) => {
-                    resolve(new File([blob!], file.name, { type: 'image/jpeg' }));
-                }, 'image/jpeg', 0.92);
+                    if (blob) {
+                        resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.webp'), { type: mimeType }));
+                    } else {
+                        // Fallback to JPEG
+                        canvas.toBlob((fb) => {
+                            resolve(new File([fb!], file.name, { type: 'image/jpeg' }));
+                        }, 'image/jpeg', QUALITY);
+                    }
+                }, mimeType, QUALITY);
             };
             img.src = URL.createObjectURL(file);
         });
@@ -136,7 +139,7 @@ export default function ImageUploader({ onImagesChange, initialImages }: Props) 
                                 d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                         </svg>
                         <p className="text-sm text-gray-500">Drop images here or click to browse</p>
-                        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP · Max 10MB each (auto-resized)</p>
+                        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP · 自动压缩为 WebP</p>
                     </>
                 )}
             </div>
