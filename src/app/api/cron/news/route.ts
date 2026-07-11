@@ -1,20 +1,43 @@
 import { NextResponse } from 'next/server';
 import { getDb, createNews, getAllNews } from '@/lib/db';
 import { getSession } from '@/lib/auth';
+import { WORLD_FOODS } from '@/lib/world-foods';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 // Daily automated news collection for the 零食新闻 board.
 // Trigger: Vercel Cron at 00:00 UTC (= 08:00 Beijing), see vercel.json.
+// Editorial policy:
+//   - Focus on innovation / research / industry / regulation stories,
+//     domestic and international.
+//   - Food-safety incident stories are capped at 2 per day.
+//   - A world specialty food feature is published on Mondays and Thursdays.
 // Cross-verification: a story is only published if at least TWO different
 // media outlets report it (clustered by title similarity).
 
-const QUERIES = ['零食', '食品安全', '休闲食品'];
+const QUERIES = ['零食 新品', '食品 创新 科技', '食品 研究', '食品产业 市场', '食品 标准 法规'];
 const MAX_PUBLISH = 10;
+const MAX_SAFETY = 2;
 const MAX_AGE_HOURS = 48;
 
-const RELEVANT = /零食|食品|糖果|饼干|坚果|巧克力|薯片|辣条|乳业|牛奶|酸奶|饮料|方便面|烘焙|果冻|冰淇淋|雪糕|抽检|召回|添加剂|保质期|膨化|卫龙|三只松鼠|良品铺子|盐津铺子|奥利奥|乐事|旺旺/;
+const RELEVANT = /零食|食品|糖果|饼干|坚果|巧克力|薯片|辣条|乳业|牛奶|酸奶|饮料|方便面|烘焙|果冻|冰淇淋|雪糕|添加剂|代糖|蛋白|风味|膨化|休闲食品/;
+
+// Category rules — checked in order, first hit wins
+const CATEGORY_RULES: [string, RegExp][] = [
+    ['安全', /抽检|不合格|召回|下架|中毒|超标|违规|查处|曝光|315|变质|异物|投诉|处罚/],
+    ['法规', /法规|新规|国标|标准|条例|监管|政策|征求意见|管理办法|禁止|禁用|限量/],
+    ['研究', /研究|学术|论文|期刊|科学家|实验|发现|大学|科研|临床|营养学|队列/],
+    ['创新', /创新|新品|新技术|首款|首发|研发|推出|专利|升级|黑科技|新口味|新工艺|人造肉|细胞培养/],
+    ['产业', /产业|市场|营收|财报|增长|出口|进口|工厂|投产|投资|并购|品牌|销量|供应链|上市|IPO|渠道|电商/],
+];
+
+function classify(title: string): string {
+    for (const [cat, re] of CATEGORY_RULES) {
+        if (re.test(title)) return cat;
+    }
+    return '资讯';
+}
 
 interface FeedItem {
     title: string;
@@ -147,24 +170,48 @@ export async function GET(request: Request) {
     // Most-reported stories first
     verified.sort((a, b) => b.length - a.length);
 
-    // 4. Skip stories already on the news board
+    // 4. Editorial mix: innovation/research/industry/regulation first;
+    //    safety-incident stories capped at MAX_SAFETY per day
+    const safetyClusters = verified.filter((c) => classify(c[0].title) === '安全');
+    const otherClusters = verified.filter((c) => classify(c[0].title) !== '安全');
+    const ordered = [...otherClusters, ...safetyClusters.slice(0, MAX_SAFETY)];
+
+    // 5. Skip stories already on the news board
     const existing = await getAllNews();
-    const existingTitles = existing.slice(0, 100).map((n) => n.title);
+    const existingTitles = existing.slice(0, 150).map((n) => n.title.replace(/^【[^】]*】\s*/, ''));
 
     let published = 0;
     const publishedTitles: string[] = [];
-    for (const cluster of verified) {
+    for (const cluster of ordered) {
         if (published >= MAX_PUBLISH) break;
         const rep = cluster[0];
         if (existingTitles.some((t) => similarity(rep.title, t) >= 0.6)) continue;
         if (publishedTitles.some((t) => similarity(rep.title, t) >= 0.6)) continue;
 
+        const cat = classify(rep.title);
         const sources = [...new Set(cluster.map((i) => i.sourceName).filter(Boolean))];
-        const content = `${sources.length} 家媒体报道了这条新闻（${sources.slice(0, 4).join('、')}${sources.length > 4 ? ' 等' : ''}），信息经多来源交叉核验。点击下方链接阅读原文。\n\n—— 本条由系统每日自动采集发布`;
+        const content = `${sources.length} 家媒体报道了这条新闻（${sources.slice(0, 4).join('、')}${sources.length > 4 ? ' 等' : ''}），信息经多来源交叉核验。点击"阅读原文"查看报道。\n\n—— 本条由系统每日自动采集发布`;
 
-        await createNews(rep.title, content, rep.link);
+        await createNews(`【${cat}】${rep.title}`, content, rep.link);
         publishedTitles.push(rep.title);
         published++;
+    }
+
+    // 6. World specialty food feature — Mondays & Thursdays (UTC)
+    let foodPublished = '';
+    const weekday = new Date().getUTCDay();
+    if (weekday === 1 || weekday === 4 || force) {
+        const nextFood = WORLD_FOODS.find(
+            (f) => !existing.some((n) => n.title.includes(f.name))
+        );
+        if (nextFood) {
+            await createNews(
+                `【环球美食】${nextFood.name} · ${nextFood.region}`,
+                `${nextFood.intro}\n\n—— 环球特色美食栏目 · 每周一、周四更新`,
+                ''
+            );
+            foodPublished = nextFood.name;
+        }
     }
 
     return NextResponse.json({
@@ -173,6 +220,7 @@ export async function GET(request: Request) {
         fresh: fresh.length,
         verifiedClusters: verified.length,
         published,
+        worldFood: foodPublished || null,
         titles: publishedTitles,
     });
 }
