@@ -24,29 +24,67 @@ interface InfoResult {
     matched: string;
 }
 
+interface PartInfo {
+    part: string;
+    loading: boolean;
+    info: InfoResult | null;
+}
+
+// Split a compound ingredient like 食用植物油（棕榈油、大豆油） into
+// its component keywords: the outer name plus each item inside parentheses.
+// Pure numeric codes (e.g. additive numbers) are skipped.
+function splitCompound(name: string): string[] {
+    const parts: string[] = [];
+    const outer = name.match(/^[^（(]+/)?.[0]?.trim();
+    if (outer && outer.length >= 2) parts.push(outer);
+    const groups = name.match(/[（(]([^（）()]*)[）)]/g) || [];
+    for (const g of groups) {
+        const inner = g.slice(1, -1);
+        for (const p of inner.split(/[、，,/;；]+/)) {
+            const t = p.trim();
+            if (t.length >= 2 && !/^[\d.%０-９\s]+$/.test(t) && !parts.includes(t)) {
+                parts.push(t);
+            }
+        }
+    }
+    return parts.length > 0 ? parts : [name];
+}
+
+function sourceLabel(source: string): string {
+    if (source === 'baidu') return '百度百科';
+    if (source === 'wikipedia') return '维基百科';
+    return source;
+}
+
 export default function IngredientsView({
     ingredients, totalSnacks,
 }: { ingredients: IngredientEntry[]; totalSnacks: number }) {
     const [selected, setSelected] = useState<IngredientEntry | null>(null);
     const [search, setSearch] = useState('');
-    const [info, setInfo] = useState<InfoResult | null>(null);
-    const [loading, setLoading] = useState(false);
+    const [infoList, setInfoList] = useState<PartInfo[]>([]);
 
-    const fetchInfo = useCallback(async (name: string) => {
-        setLoading(true);
-        setInfo(null);
-        try {
-            const res = await fetch(`/api/ingredient-info?name=${encodeURIComponent(name)}`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data) setInfo(data);
-            }
-        } catch { /* ignore */ }
-        setLoading(false);
+    const fetchInfo = useCallback((name: string) => {
+        const parts = splitCompound(name);
+        setInfoList(parts.map((part) => ({ part, loading: true, info: null })));
+        parts.forEach((part, idx) => {
+            fetch(`/api/ingredient-info?name=${encodeURIComponent(part)}`)
+                .then((res) => (res.ok ? res.json() : null))
+                .then((data) => {
+                    setInfoList((prev) => prev.map((e, i) =>
+                        i === idx ? { ...e, loading: false, info: data || null } : e
+                    ));
+                })
+                .catch(() => {
+                    setInfoList((prev) => prev.map((e, i) =>
+                        i === idx ? { ...e, loading: false } : e
+                    ));
+                });
+        });
     }, []);
 
     useEffect(() => {
         if (selected) fetchInfo(selected.name);
+        else setInfoList([]);
     }, [selected, fetchInfo]);
 
     const filtered = search.trim()
@@ -62,6 +100,8 @@ export default function IngredientsView({
         if (pct >= 0.1) return 'bg-yellow-100 text-yellow-700 border-yellow-200';
         return 'bg-gray-100 text-gray-600 border-gray-200';
     }
+
+    const isCompound = infoList.length > 1;
 
     return (
         <div>
@@ -106,49 +146,74 @@ export default function IngredientsView({
                         出现在 {selected.count} 款零食中（占比 {(selected.count / totalSnacks * 100).toFixed(1)}%）
                     </p>
 
-                    {/* Info card */}
+                    {/* Info card — one section per component for compound ingredients */}
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xs font-semibold text-blue-700">
-                                {loading ? '📖 搜索中...' : info?.source === '内置知识库' ? '📖 成分科普' : info?.source === 'baidu' ? '📖 百度百科' : info?.source === 'wikipedia' ? '📖 维基百科' : '📖 成分科普'}
-                            </span>
-                            {info && info.matched !== selected.name && (
+                        <div className="flex items-center gap-2 mb-3">
+                            <span className="text-xs font-semibold text-blue-700">📖 成分科普</span>
+                            {isCompound && (
                                 <span className="text-xs text-blue-500 bg-blue-100 px-2 py-0.5 rounded-full">
-                                    匹配: {info.matched}
+                                    复合配料 · 已拆分为 {infoList.length} 个成分
                                 </span>
                             )}
                         </div>
-                        {info ? (
-                            <>
-                                <p className="text-sm text-blue-800 leading-relaxed">{info.summary}</p>
-                                <a href={info.url} target="_blank" rel="noopener noreferrer"
-                                    className="inline-block mt-3 text-xs text-blue-500 hover:text-blue-700 underline">
-                                    在{info.source === '内置知识库' ? '百度百科' : info.source === 'baidu' ? '百度百科' : '维基百科'}阅读全文 →
-                                </a>
-                            </>
-                        ) : loading ? (
-                            <div className="space-y-2 animate-pulse">
-                                <div className="h-3 bg-blue-200 rounded w-3/4" />
-                                <div className="h-3 bg-blue-200 rounded w-full" />
-                                <div className="h-3 bg-blue-200 rounded w-2/3" />
-                            </div>
-                        ) : (
-                            <div>
-                                <p className="text-sm text-blue-700 mb-3">
-                                    未找到该成分信息，尝试以下来源：
-                                </p>
-                                <div className="flex flex-wrap gap-2">
-                                    <a href={`https://baike.baidu.com/item/${encodeURIComponent(selected.name)}`} target="_blank" rel="noopener noreferrer"
-                                        className="text-xs px-3 py-1 bg-white border border-blue-200 rounded-full text-blue-600 hover:bg-blue-100 transition-colors">
-                                        百度百科
-                                    </a>
-                                    <a href={`https://en.wikipedia.org/wiki/${encodeURIComponent(selected.name)}`} target="_blank" rel="noopener noreferrer"
-                                        className="text-xs px-3 py-1 bg-white border border-blue-200 rounded-full text-blue-600 hover:bg-blue-100 transition-colors">
-                                        Wikipedia
-                                    </a>
+
+                        <div className="space-y-4">
+                            {infoList.map((entry) => (
+                                <div
+                                    key={entry.part}
+                                    className={isCompound ? 'border-t border-blue-200/60 pt-3 first:border-t-0 first:pt-0' : ''}
+                                >
+                                    {isCompound && (
+                                        <p className="text-sm font-semibold text-blue-900 mb-1">
+                                            {entry.part}
+                                        </p>
+                                    )}
+
+                                    {entry.loading ? (
+                                        <div className="space-y-2 animate-pulse">
+                                            <div className="h-3 bg-blue-200 rounded w-3/4" />
+                                            <div className="h-3 bg-blue-200 rounded w-full" />
+                                        </div>
+                                    ) : entry.info ? (
+                                        <>
+                                            <div className="flex items-center gap-2 mb-1">
+                                                <span className="text-[11px] text-blue-400">
+                                                    来源：{sourceLabel(entry.info.source)}
+                                                </span>
+                                                {entry.info.matched !== entry.part && (
+                                                    <span className="text-[11px] text-blue-500 bg-blue-100 px-2 py-0.5 rounded-full">
+                                                        匹配: {entry.info.matched}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-sm text-blue-800 leading-relaxed">{entry.info.summary}</p>
+                                            {entry.info.url && (
+                                                <a href={entry.info.url} target="_blank" rel="noopener noreferrer"
+                                                    className="inline-block mt-1.5 text-xs text-blue-500 hover:text-blue-700 underline">
+                                                    阅读全文 →
+                                                </a>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <div>
+                                            <p className="text-sm text-blue-700 mb-2">
+                                                未找到「{entry.part}」的科普信息，可以试试：
+                                            </p>
+                                            <div className="flex flex-wrap gap-2">
+                                                <a href={`https://baike.baidu.com/item/${encodeURIComponent(entry.part)}`} target="_blank" rel="noopener noreferrer"
+                                                    className="text-xs px-3 py-1 bg-white border border-blue-200 rounded-full text-blue-600 hover:bg-blue-100 transition-colors">
+                                                    百度百科
+                                                </a>
+                                                <a href={`https://zh.wikipedia.org/wiki/${encodeURIComponent(entry.part)}`} target="_blank" rel="noopener noreferrer"
+                                                    className="text-xs px-3 py-1 bg-white border border-blue-200 rounded-full text-blue-600 hover:bg-blue-100 transition-colors">
+                                                    维基百科
+                                                </a>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
-                            </div>
-                        )}
+                            ))}
+                        </div>
                     </div>
 
                     {/* Snacks list */}
