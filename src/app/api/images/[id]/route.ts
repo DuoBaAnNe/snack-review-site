@@ -16,7 +16,9 @@ export async function GET(
         status: 200,
         headers: {
             'Content-Type': image.mime_type,
-            'Cache-Control': 'public, max-age=31536000, immutable',
+            // max-age: browser cache; s-maxage: Vercel edge cache (serves
+            // repeat requests from a nearby PoP instead of the US function)
+            'Cache-Control': 'public, max-age=31536000, s-maxage=31536000, immutable',
         },
     });
 }

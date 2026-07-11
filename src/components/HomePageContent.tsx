@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 import type { Snack, NewsItem } from '@/types';
 import CategoryNav from './CategoryNav';
 import SearchModal from './SearchModal';
@@ -37,7 +37,6 @@ type ViewMode = 'snacks' | 'news' | 'ingredients' | 'map';
 const VALID_VIEWS: ViewMode[] = ['snacks', 'news', 'ingredients', 'map'];
 
 export default function HomePageContent({ snacks, news }: Props) {
-    const router = useRouter();
     const searchParams = useSearchParams();
 
     // Initialize view/category from the URL so filtered views are shareable
@@ -71,8 +70,11 @@ export default function HomePageContent({ snacks, news }: Props) {
         if (view !== 'snacks') params.set('view', view);
         if (cat) params.set('cat', cat);
         const qs = params.toString();
-        router.replace(qs ? `/?${qs}` : '/', { scroll: false });
-    }, [router]);
+        // Native history update: the URL changes instantly with no server
+        // round-trip (router.replace waits for the overseas server, which
+        // made the address bar lag or not update at all)
+        window.history.replaceState(null, '', qs ? `/?${qs}` : '/');
+    }, []);
 
     const filtered = activeCategory
         ? snacks.filter((s) => s.category === activeCategory)

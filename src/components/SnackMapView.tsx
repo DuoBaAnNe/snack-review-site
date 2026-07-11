@@ -79,7 +79,7 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
     const chartRef = useRef<HTMLDivElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const instanceRef = useRef<echarts.ECharts | null>(null);
-    const [mapReady, setMapReady] = useState(false);
+    const [mapState, setMapState] = useState<'loading' | 'ready' | 'error'>('loading');
     const [isDark, setIsDark] = useState(false);
 
     // Track theme changes (moon/sun toggle or system setting) so the chart
@@ -118,9 +118,11 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
 
     const provincesWithSnacks = useMemo(() => new Set(provinceMap.keys()), [provinceMap]);
 
-    // Register map
-    useEffect(() => {
-        if (mapRegistered) { setMapReady(true); return; }
+    // Register map — the geo data chunk can fail on flaky networks, so
+    // failures show a retry button instead of a silently blank map
+    const loadMap = useCallback(() => {
+        if (mapRegistered) { setMapState('ready'); return; }
+        setMapState('loading');
         import('echarts-china-map/lib/china.json').then((geo) => {
             const json = (geo.default || geo) as any;
             // Patch label anchor points before registering
@@ -130,9 +132,11 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
             }
             echarts.registerMap('china', json);
             mapRegistered = true;
-            setMapReady(true);
-        }).catch(() => setMapReady(true));
+            setMapState('ready');
+        }).catch(() => setMapState('error'));
     }, []);
+
+    useEffect(() => { loadMap(); }, [loadMap]);
 
     const maxCount = useMemo(() =>
         Math.max(...Array.from(provincesWithSnacks).map((p) => provinceMap.get(p)?.length || 0), 1),
@@ -150,7 +154,7 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
     }, [maxCount]);
 
     useEffect(() => {
-        if (!mapReady || !chartRef.current) return;
+        if (mapState !== 'ready' || !chartRef.current) return;
 
         if (instanceRef.current) instanceRef.current.dispose();
 
@@ -261,13 +265,30 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
             container?.removeEventListener('mouseleave', onContainerLeave);
             chart.dispose();
         };
-    }, [mapReady, provinceMap, provincesWithSnacks, maxCount, getGreen, isDark]);
+    }, [mapState, provinceMap, provincesWithSnacks, maxCount, getGreen, isDark]);
 
     return (
         <div className="bg-white rounded-xl shadow-md border border-gray-100 p-4">
             <h2 className="text-lg font-bold text-gray-800 mb-2 text-center">零食地图</h2>
             <div ref={containerRef} className="relative mx-auto" style={{ maxWidth: 640 }}>
-                <div ref={chartRef} style={{ width: '100%', height: 500 }} />
+                {mapState === 'ready' ? (
+                    <div ref={chartRef} style={{ width: '100%', height: 500 }} />
+                ) : mapState === 'loading' ? (
+                    <div className="h-[500px] animate-pulse bg-gray-100 rounded-lg flex items-center justify-center">
+                        <span className="text-gray-400">地图资源加载中...</span>
+                    </div>
+                ) : (
+                    <div className="h-[500px] flex flex-col items-center justify-center gap-3">
+                        <p className="text-sm text-gray-500">地图资源加载失败（可能是网络波动）</p>
+                        <button
+                            onClick={loadMap}
+                            className="px-4 py-1.5 text-sm rounded-full bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+                        >
+                            重试
+                        </button>
+                        <p className="text-xs text-gray-400">重试无效时请刷新页面</p>
+                    </div>
+                )}
 
                 {/* Custom floating panel — fixed position, offset to the right of cursor */}
                 {floatPanel && floatPanel.snacks.length > 0 && (
