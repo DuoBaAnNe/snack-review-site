@@ -57,7 +57,7 @@ export default function HeaderButtons() {
     return (
         <div className="flex flex-nowrap overflow-x-auto bg-gradient-to-b from-amber-100/60 via-orange-50/60 to-rose-100/60">
             <button
-                onClick={async () => { await router.push('/'); }}
+                onClick={() => { window.location.href = '/'; }}
                 className={`${btnBase} ${btnInactive}`}
             >
                 返回首页

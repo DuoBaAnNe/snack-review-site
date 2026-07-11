@@ -16,6 +16,49 @@ export const maxDuration = 60;
 // Cross-verification: a story is only published if at least TWO different
 // media outlets report it (clustered by title similarity).
 
+// AI intro writer — same API credentials as the snack image analyzer
+const AI_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.deepseek.com';
+const AI_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || '';
+const AI_MODEL = process.env.ANTHROPIC_MODEL || 'deepseek-v4-pro';
+
+async function aiEnrich(titles: string[]): Promise<string[] | null> {
+    if (!AI_TOKEN || titles.length === 0) return null;
+    const prompt = `你是零食测评网站"七零十"的新闻编辑。下面是今天采集到的食品行业新闻标题列表。请为每条新闻写一段80~140字的中文导读：用通俗的语言说明这条新闻大概讲什么、相关背景、以及它对消费者或行业的意义。要求：客观中立；绝对不要编造标题中没有的具体数字、日期、人名和结论；把握不准的信息用宽泛表述。
+
+标题列表：
+${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+只返回一个 JSON 字符串数组（长度 ${titles.length}，顺序与标题一一对应），不要任何其他文字。`;
+    try {
+        const res = await fetch(`${AI_BASE}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${AI_TOKEN}`,
+            },
+            body: JSON.stringify({
+                model: AI_MODEL,
+                max_tokens: 3000,
+                messages: [{ role: 'user', content: prompt }],
+            }),
+            signal: AbortSignal.timeout(30000),
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        let text: string = data?.choices?.[0]?.message?.content || '';
+        text = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const start = text.indexOf('[');
+        const end = text.lastIndexOf(']');
+        if (start === -1 || end === -1) return null;
+        const arr = JSON.parse(text.slice(start, end + 1));
+        if (!Array.isArray(arr) || arr.length !== titles.length) return null;
+        return arr.map((s) => String(s));
+    } catch (e: any) {
+        console.error('[ai-enrich]', e?.message || e);
+        return null;
+    }
+}
+
 const QUERIES = ['零食 新品', '食品 创新 科技', '食品 研究', '食品产业 市场', '食品 标准 法规'];
 const MAX_PUBLISH = 10;
 const MAX_SAFETY = 2;
@@ -176,21 +219,32 @@ export async function GET(request: Request) {
     const otherClusters = verified.filter((c) => classify(c[0].title) !== '安全');
     const ordered = [...otherClusters, ...safetyClusters.slice(0, MAX_SAFETY)];
 
-    // 5. Skip stories already on the news board
+    // 5. Skip stories already on the news board; pick the final list
     const existing = await getAllNews();
     const existingTitles = existing.slice(0, 150).map((n) => n.title.replace(/^【[^】]*】\s*/, ''));
 
-    let published = 0;
-    const publishedTitles: string[] = [];
+    const chosen: { rep: FeedItem; cat: string; sources: string[] }[] = [];
     for (const cluster of ordered) {
-        if (published >= MAX_PUBLISH) break;
+        if (chosen.length >= MAX_PUBLISH) break;
         const rep = cluster[0];
         if (existingTitles.some((t) => similarity(rep.title, t) >= 0.6)) continue;
-        if (publishedTitles.some((t) => similarity(rep.title, t) >= 0.6)) continue;
-
-        const cat = classify(rep.title);
+        if (chosen.some((c) => similarity(rep.title, c.rep.title) >= 0.6)) continue;
         const sources = [...new Set(cluster.map((i) => i.sourceName).filter(Boolean))];
-        const content = `${sources.length} 家媒体报道了这条新闻（${sources.slice(0, 4).join('、')}${sources.length > 4 ? ' 等' : ''}），信息经多来源交叉核验。点击"阅读原文"查看报道。\n\n—— 本条由系统每日自动采集发布`;
+        chosen.push({ rep, cat: classify(rep.title), sources });
+    }
+
+    // 5b. AI-written intros (falls back to the plain format if the call fails)
+    const intros = await aiEnrich(chosen.map((c) => c.rep.title));
+
+    let published = 0;
+    const publishedTitles: string[] = [];
+    for (let i = 0; i < chosen.length; i++) {
+        const { rep, cat, sources } = chosen[i];
+        const srcLine = `📰 ${sources.length} 家媒体报道（${sources.slice(0, 4).join('、')}${sources.length > 4 ? ' 等' : ''}），信息经多来源交叉核验。`;
+        const intro = intros?.[i]?.trim();
+        const content = intro
+            ? `${intro}\n\n${srcLine}\n—— 导读由 AI 辅助撰写，点击"阅读原文"查看完整报道`
+            : `${srcLine}\n\n—— 本条由系统每日自动采集发布，点击"阅读原文"查看报道`;
 
         await createNews(`【${cat}】${rep.title}`, content, rep.link);
         publishedTitles.push(rep.title);
