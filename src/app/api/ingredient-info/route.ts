@@ -37,14 +37,22 @@ function getLocalKB(): Record<string, string> {
 }
 
 // --- Candidate name generation ---
-// Chinese ingredient names put the head word LAST (固体玉米糖浆 -> 糖浆 is
-// the substance, 固体 is just a modifier). So we: 1) strip known modifier
-// prefixes, 2) fall back to suffixes, longest first. We never match by
-// prefix — that is what wrongly matched 固体玉米糖浆 to 固体.
-const MODIFIER_PREFIX = /^(固体|液体|食用|精制|精炼|浓缩|脱水|脱脂|全脂|低脂|无水|结晶|天然|复合|进口|新鲜|优质|特级|一级|二级)/;
+// Order matters:
+//   1. the exact name
+//   2. the name with modifier prefixes stripped (固体玉米糖浆 -> 玉米糖浆)
+//   3. suffixes of the core, longest first (玉米糖浆 -> 糖浆) — Chinese head
+//      words usually sit at the END
+//   4. prefixes of the core, longest first (白砂糖粉 -> 白砂糖) — fallback
+// Bare modifiers (固体/浓缩/食用...) are never used as queries themselves.
+const MODIFIERS = ['固体', '液体', '食用', '精制', '精炼', '浓缩', '脱水', '脱脂', '全脂', '低脂', '无水', '结晶', '天然', '复合', '进口', '新鲜', '优质', '特级', '一级', '二级'];
+const MODIFIER_PREFIX = new RegExp('^(' + MODIFIERS.join('|') + ')');
+const MODIFIER_SET = new Set(MODIFIERS);
 
 function candidateNames(name: string): string[] {
     const list: string[] = [name];
+    const push = (s: string) => {
+        if (s.length >= 2 && !MODIFIER_SET.has(s) && !list.includes(s)) list.push(s);
+    };
     let core = name;
     for (;;) {
         const m = core.match(MODIFIER_PREFIX);
@@ -52,17 +60,14 @@ function candidateNames(name: string): string[] {
         const next = core.slice(m[0].length);
         if (next.length < 2) break;
         core = next;
-        if (!list.includes(core)) list.push(core);
+        push(core);
     }
-    for (let start = 1; start <= core.length - 2; start++) {
-        const sub = core.slice(start);
-        if (!list.includes(sub)) list.push(sub);
-    }
+    for (let start = 1; start <= core.length - 2; start++) push(core.slice(start));
+    for (let len = core.length - 1; len >= 2; len--) push(core.slice(0, len));
     return list;
 }
 
 // --- Database-backed knowledge base (grows automatically) ---
-// v2: table renamed to discard bad entries cached by earlier versions.
 const KB_TABLE = 'ingredient_kb_v2';
 let kbTableReady = false;
 async function ensureKbTable(db: Awaited<ReturnType<typeof getDb>>) {
@@ -119,13 +124,9 @@ async function fetchBaiduBaike(query: string): Promise<string | null> {
             signal: AbortSignal.timeout(5000),
         });
         if (!res.ok) return null;
+        // Reject obvious error/search redirects, but allow synonym redirects
+        if (res.url && /\/(error|search)/i.test(res.url)) return null;
         const html = await res.text();
-
-        // Guard against Baidu redirecting to an unrelated page: the page
-        // title must contain the query text, otherwise reject the result.
-        const titleMatch = html.match(/<title>([^<]*)<\/title>/i);
-        const pageTitle = titleMatch?.[1] || '';
-        if (!pageTitle.includes(query)) return null;
 
         const descMatch = html.match(/<meta[^>]*name="description"[^>]*content="([^"]*)"/i);
         let summary = descMatch?.[1]?.trim() || '';
@@ -153,7 +154,6 @@ async function fetchWikipedia(query: string): Promise<{ title: string; summary: 
     try {
         const url = `https://zh.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`;
         const res = await fetch(url, {
-            // Ask for Simplified Chinese explicitly
             headers: { 'Accept-Language': 'zh-CN' },
             signal: AbortSignal.timeout(5000),
         });
@@ -221,7 +221,7 @@ export async function GET(request: Request) {
     }
 
     // 3. Baidu Baike (server-side fetch; result is saved for next time)
-    for (const q of candidates.slice(0, 5)) {
+    for (const q of candidates.slice(0, 6)) {
         const summary = await fetchBaiduBaike(q);
         if (summary) {
             const url = `https://baike.baidu.com/item/${encodeURIComponent(q)}`;
@@ -238,7 +238,7 @@ export async function GET(request: Request) {
     }
 
     // 4. Last resort: Wikipedia (also saved for next time)
-    for (const q of candidates.slice(0, 5)) {
+    for (const q of candidates.slice(0, 6)) {
         const result = await fetchWikipedia(q);
         if (result) {
             await saveToKb(name, q, result.summary, result.url, '维基百科');
