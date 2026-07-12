@@ -146,20 +146,37 @@ function similarity(a: string, b: string): number {
 }
 
 // --- Once-per-day guard ---
-async function alreadyRanToday(force: boolean): Promise<boolean> {
+// The day is marked only AFTER a successful run, so a crashed or timed-out
+// run does not burn the day (the next trigger can retry).
+function todayKey(): string {
+    return new Date().toISOString().slice(0, 10);
+}
+
+async function ensureCronTable() {
     const db = await getDb();
     await db.execute(`CREATE TABLE IF NOT EXISTS cron_log (
         job TEXT NOT NULL,
         day TEXT NOT NULL,
         PRIMARY KEY (job, day)
     )`);
-    if (force) return false;
-    const day = new Date().toISOString().slice(0, 10);
+    return db;
+}
+
+async function ranToday(): Promise<boolean> {
+    const db = await ensureCronTable();
     const result = await db.execute(
-        'INSERT OR IGNORE INTO cron_log (job, day) VALUES (?, ?)',
-        ['news', day]
+        'SELECT 1 FROM cron_log WHERE job = ? AND day = ?',
+        ['news', todayKey()]
     );
-    return result.rowsAffected === 0;
+    return result.rows.length > 0;
+}
+
+async function markRanToday(): Promise<void> {
+    const db = await ensureCronTable();
+    await db.execute(
+        'INSERT OR IGNORE INTO cron_log (job, day) VALUES (?, ?)',
+        ['news', todayKey()]
+    );
 }
 
 export async function GET(request: Request) {
@@ -176,15 +193,15 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const force = isAdmin && url.searchParams.get('force') === '1';
 
-    if (await alreadyRanToday(force)) {
+    try {
+    if (!force && await ranToday()) {
         return NextResponse.json({ ok: true, skipped: '今天已经发布过了' });
     }
 
-    // 1. Collect from all feeds
-    const all: FeedItem[] = [];
-    for (const q of QUERIES) {
-        all.push(...await fetchFeed(q));
-    }
+    // 1. Collect from all feeds — in parallel to stay well within the
+    //    function time limit
+    const feedResults = await Promise.all(QUERIES.map((q) => fetchFeed(q)));
+    const all: FeedItem[] = feedResults.flat();
 
     // 2. Keep fresh + relevant items
     const cutoff = Date.now() - MAX_AGE_HOURS * 3600 * 1000;
@@ -268,6 +285,9 @@ export async function GET(request: Request) {
         }
     }
 
+    // Mark the day only after everything succeeded (force runs don't count)
+    if (!force) await markRanToday();
+
     return NextResponse.json({
         ok: true,
         collected: all.length,
@@ -277,4 +297,11 @@ export async function GET(request: Request) {
         worldFood: foodPublished || null,
         titles: publishedTitles,
     });
+    } catch (e: any) {
+        console.error('[cron-news]', e?.message || e);
+        return NextResponse.json(
+            { ok: false, error: String(e?.message || e) },
+            { status: 500 }
+        );
+    }
 }
