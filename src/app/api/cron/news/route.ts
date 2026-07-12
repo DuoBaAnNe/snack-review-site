@@ -223,9 +223,15 @@ export async function GET(request: Request) {
         }
         if (!placed) clusters.push([item]);
     }
+    // Trusted outlets — a story from one of these passes verification even
+    // as a single source (Google News already merges duplicate coverage,
+    // so requiring 2+ domains alone filters out almost everything)
+    const TRUSTED = /新华|人民网|人民日报|央视|CCTV|中新社|中国新闻网|澎湃|界面|第一财经|每日经济|21世纪经济|经济观察|北京商报|新京报|环球网|中国网|光明网|工人日报|南方都市报|南方周末|红星新闻|封面新闻|极目新闻|上观|解放日报|财新|证券时报|券商中国|食品伙伴网|FoodTalks|Foodaily|中国食品报|消费日报|中国经济网|经济日报|36氪|虎嗅|钛媒体|路透|Reuters|BBC|FT中文|联合早报|zaobao|新浪|搜狐|网易|腾讯|凤凰/i;
+
     const verified = clusters.filter((c) => {
         const domains = new Set(c.map((i) => i.sourceDomain || i.sourceName));
-        return domains.size >= 2;
+        if (domains.size >= 2) return true;
+        return c.some((i) => TRUSTED.test(i.sourceName) || TRUSTED.test(i.sourceDomain));
     });
     // Most-reported stories first
     verified.sort((a, b) => b.length - a.length);
@@ -257,7 +263,9 @@ export async function GET(request: Request) {
     const publishedTitles: string[] = [];
     for (let i = 0; i < chosen.length; i++) {
         const { rep, cat, sources } = chosen[i];
-        const srcLine = `📰 ${sources.length} 家媒体报道（${sources.slice(0, 4).join('、')}${sources.length > 4 ? ' 等' : ''}），信息经多来源交叉核验。`;
+        const srcLine = sources.length >= 2
+            ? `📰 ${sources.length} 家媒体报道（${sources.slice(0, 4).join('、')}${sources.length > 4 ? ' 等' : ''}），信息经多来源交叉核验。`
+            : `📰 来源：${sources[0] || '媒体报道'}（权威媒体）。`;
         const intro = intros?.[i]?.trim();
         const content = intro
             ? `${intro}\n\n${srcLine}\n—— 导读由 AI 辅助撰写，点击"阅读原文"查看完整报道`
@@ -268,10 +276,16 @@ export async function GET(request: Request) {
         published++;
     }
 
-    // 6. World specialty food feature — Mondays & Thursdays (UTC)
+    // 6. World specialty food feature — Mondays & Thursdays (UTC).
+    //    Skip if one was already posted in the last 48h (e.g. repeated
+    //    force runs while testing), so the board doesn't flood with foods.
     let foodPublished = '';
     const weekday = new Date().getUTCDay();
-    if (weekday === 1 || weekday === 4 || force) {
+    const recentFood = existing.some((n) =>
+        n.title.startsWith('【环球美食】')
+        && Date.now() - Date.parse(n.created_at.replace(' ', 'T') + 'Z') < 48 * 3600 * 1000
+    );
+    if ((weekday === 1 || weekday === 4 || force) && !recentFood) {
         const nextFood = WORLD_FOODS.find(
             (f) => !existing.some((n) => n.title.includes(f.name))
         );
