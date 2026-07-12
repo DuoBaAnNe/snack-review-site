@@ -62,7 +62,7 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 const QUERIES = ['零食 新品', '食品 创新 科技', '食品 研究', '食品产业 市场', '食品 标准 法规'];
 const MAX_PUBLISH = 10;
 const MAX_SAFETY = 2;
-const MAX_AGE_HOURS = 48;
+const MAX_AGE_HOURS = 72;
 
 const RELEVANT = /零食|食品|糖果|饼干|坚果|巧克力|薯片|辣条|乳业|牛奶|酸奶|饮料|方便面|烘焙|果冻|冰淇淋|雪糕|添加剂|代糖|蛋白|风味|膨化|休闲食品/;
 
@@ -203,11 +203,14 @@ export async function GET(request: Request) {
     const feedResults = await Promise.all(QUERIES.map((q) => fetchFeed(q)));
     const all: FeedItem[] = feedResults.flat();
 
-    // 2. Keep fresh + relevant items
+    // 2. Keep fresh + relevant items.
+    //    - Items with an unparseable/missing date are kept (benefit of doubt)
+    //    - Google already scopes results to our queries, so if the strict
+    //      keyword filter wipes everything out, fall back to the fresh set
     const cutoff = Date.now() - MAX_AGE_HOURS * 3600 * 1000;
-    const fresh = all.filter((it) =>
-        (it.pubDate === 0 || it.pubDate >= cutoff) && RELEVANT.test(it.title)
-    );
+    const freshOnly = all.filter((it) => !(it.pubDate > 0) || it.pubDate >= cutoff);
+    const relevantFresh = freshOnly.filter((it) => RELEVANT.test(it.title));
+    const fresh = relevantFresh.length > 0 ? relevantFresh : freshOnly;
 
     // 3. Cluster similar titles; a cluster is trustworthy only if at least
     //    two DIFFERENT outlets reported the same story (cross-verification)
@@ -305,11 +308,19 @@ export async function GET(request: Request) {
     return NextResponse.json({
         ok: true,
         collected: all.length,
+        freshOnly: freshOnly.length,
+        relevantFresh: relevantFresh.length,
         fresh: fresh.length,
         verifiedClusters: verified.length,
         published,
         worldFood: foodPublished || null,
         titles: publishedTitles,
+        // Diagnostic sample: first 3 items with their parsed dates
+        sample: all.slice(0, 3).map((i) => ({
+            title: i.title.slice(0, 40),
+            source: i.sourceName,
+            date: i.pubDate > 0 ? new Date(i.pubDate).toISOString() : `raw:${i.pubDate}`,
+        })),
     });
     } catch (e: any) {
         console.error('[cron-news]', e?.message || e);
