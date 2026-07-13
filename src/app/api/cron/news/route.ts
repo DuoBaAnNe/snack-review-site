@@ -59,10 +59,21 @@ ${titles.map((t, i) => `${i + 1}. ${t}`).join('\n')}
     }
 }
 
-const QUERIES = ['零食 新品', '食品 创新 科技', '食品 研究', '食品产业 市场', '食品 标准 法规'];
+// NOTE: the `when:Nd` operator is essential — without it Google News
+// sorts by relevance and returns months-old evergreen articles. It caps
+// results to the last N days at the source. Verified 2026-07-13.
+const QUERIES = [
+    '食品 新品 上市 when:7d',
+    '食品 研发 创新 when:7d',
+    '食品 营养 研究 when:7d',
+    '食品 产业 投资 when:7d',
+    '食品 标准 法规 when:7d',
+    '零食 when:5d',
+    '食品 when:3d',
+];
 const MAX_PUBLISH = 10;
 const MAX_SAFETY = 2;
-const MAX_AGE_HOURS = 72;
+const MAX_AGE_HOURS = 168; // 7 days, matches the widest when: window
 
 const RELEVANT = /零食|食品|糖果|饼干|坚果|巧克力|薯片|辣条|乳业|牛奶|酸奶|饮料|方便面|烘焙|果冻|冰淇淋|雪糕|添加剂|代糖|蛋白|风味|膨化|休闲食品/;
 
