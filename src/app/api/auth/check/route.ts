@@ -3,5 +3,8 @@ import { getSession } from '@/lib/auth';
 
 export async function GET() {
     const session = await getSession();
-    return NextResponse.json({ authenticated: !!session });
+    return NextResponse.json({
+        authenticated: !!session,
+        username: session?.username || null,
+    });
 }

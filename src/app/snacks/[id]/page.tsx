@@ -1,5 +1,4 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getSnackById, getAllSnacks } from '@/lib/db';
 import SnackDetail from './SnackDetail';
@@ -28,9 +27,6 @@ export default async function SnackDetailPage({ params }: { params: Promise<{ id
 
     return (
         <div className="max-w-4xl mx-auto px-4 py-6 md:py-10">
-            <Link href="/" className="text-sm text-orange-500 hover:text-orange-600 mb-6 inline-block">
-                ← 返回首页
-            </Link>
             <SnackDetail snack={snack} related={related} />
         </div>
     );

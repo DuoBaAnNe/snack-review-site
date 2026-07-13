@@ -84,10 +84,10 @@ export default function NewsManager({ news: initialNews }: { news: NewsItem[] })
                     <table className="w-full min-w-[500px]">
                         <thead>
                             <tr className="border-b border-gray-100 bg-gray-50">
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Title</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Content</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Date</th>
-                                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Actions</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">标题</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">内容</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">日期</th>
+                                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">操作</th>
                             </tr>
                         </thead>
                         <tbody>

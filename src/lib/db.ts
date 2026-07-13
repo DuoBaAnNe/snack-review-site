@@ -153,6 +153,15 @@ async function initSchema() {
             console.error('Migration v5 error:', e);
         }
     }
+
+    // --- Migration v6: soft-delete column for news recycle bin ---
+    try {
+        await client.execute("ALTER TABLE news ADD COLUMN deleted INTEGER NOT NULL DEFAULT 0");
+    } catch (e: any) {
+        if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) {
+            console.error('Migration v6 error:', e);
+        }
+    }
 }
 
 // --- Snack queries ---
@@ -357,7 +366,13 @@ export async function getUserByUsername(username: string) {
 
 export async function getAllNews(): Promise<import('@/types').NewsItem[]> {
     const db = await getDb();
-    const result = await db.execute('SELECT * FROM news ORDER BY created_at DESC');
+    const result = await db.execute('SELECT * FROM news WHERE deleted = 0 ORDER BY created_at DESC');
+    return result.rows.map(rowToNews);
+}
+
+export async function getDeletedNews(): Promise<import('@/types').NewsItem[]> {
+    const db = await getDb();
+    const result = await db.execute('SELECT * FROM news WHERE deleted = 1 ORDER BY created_at DESC');
     return result.rows.map(rowToNews);
 }
 
@@ -378,8 +393,15 @@ export async function createNews(title: string, content: string, sourceUrl: stri
 }
 
 export async function deleteNews(id: number): Promise<boolean> {
+    // Soft delete — moves the item to the recycle bin instead of erasing it
     const db = await getDb();
-    const result = await db.execute('DELETE FROM news WHERE id = ?', [id]);
+    const result = await db.execute('UPDATE news SET deleted = 1 WHERE id = ?', [id]);
+    return result.rowsAffected > 0;
+}
+
+export async function restoreNews(id: number): Promise<boolean> {
+    const db = await getDb();
+    const result = await db.execute('UPDATE news SET deleted = 0 WHERE id = ?', [id]);
     return result.rowsAffected > 0;
 }
 

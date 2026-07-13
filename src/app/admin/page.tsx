@@ -16,33 +16,33 @@ export default async function AdminDashboard() {
         <div>
             <div className="flex items-center justify-between mb-6">
                 <h1 className="text-xl font-bold text-gray-800">
-                    Snack Reviews ({snacks.length})
+                    零食管理（{snacks.length}）
                 </h1>
                 <Link
                     href="/admin/new"
                     className="px-4 py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white font-medium rounded-lg hover:opacity-90 transition-opacity text-sm"
                 >
-                    + Add New Snack
+                    + 添加零食
                 </Link>
             </div>
 
             {snacks.length === 0 ? (
                 <div className="text-center py-16 text-gray-400 bg-white rounded-xl border border-gray-100">
-                    <p className="text-lg">No entries yet.</p>
-                    <p className="text-sm mt-1">Click &quot;Add New Snack&quot; to create your first review.</p>
+                    <p className="text-lg">还没有零食。</p>
+                    <p className="text-sm mt-1">点击"添加零食"创建第一条测评。</p>
                 </div>
             ) : (
                 <div className="bg-white rounded-xl border border-gray-100 overflow-x-auto">
                     <table className="w-full min-w-[700px]">
                         <thead>
                             <tr className="border-b border-gray-100 bg-gray-50">
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Image</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Brand</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Product</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Category</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Review</th>
-                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">Date</th>
-                                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">Actions</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">图片</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">品牌</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">产品</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">分类</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">评测</th>
+                                <th className="text-left px-4 py-3 text-xs font-medium text-gray-500">日期</th>
+                                <th className="text-right px-4 py-3 text-xs font-medium text-gray-500">操作</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -72,7 +72,7 @@ export default async function AdminDashboard() {
                                                 href={`/admin/${snack.id}/edit`}
                                                 className="text-xs text-orange-600 hover:text-orange-800 font-medium"
                                             >
-                                                Edit
+                                                编辑
                                             </Link>
                                             <DeleteButton snackId={snack.id} snackName={snack.product_name} />
                                         </div>
@@ -87,7 +87,7 @@ export default async function AdminDashboard() {
             {/* News Management */}
             <div className="mt-12">
                 <h2 className="text-xl font-bold text-gray-800 mb-6">
-                    📰 News Management ({news.length})
+                    📰 食品资讯管理（{news.length}）
                 </h2>
                 <NewsManager news={news} />
             </div>

@@ -236,7 +236,12 @@ export default function SnackCard({ snack, isAdmin: isAdminProp }: { snack: Snac
                     </div>
                     <p className="text-xs text-gray-500 mt-1.5">
                         {reviewerCount > 0 ? `共 ${reviewerCount} 人评` : '暂无人评'}
-                        {snack.created_by && ` · 首评 ${snack.created_by}`}
+                        {snack.created_by && (
+                            <>
+                                {' · 首评 '}
+                                <span className="font-semibold text-orange-500">{snack.created_by}</span>
+                            </>
+                        )}
                     </p>
 
                     {ingredients.length > 0 ? (

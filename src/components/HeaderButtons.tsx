@@ -27,7 +27,7 @@ export default function HeaderButtons() {
             fetch('/api/auth/check').then(r => r.json()),
         ]).then(([userData, adminData]) => {
             setUser(userData.authenticated ? userData.user : null);
-            setAdminUser(adminData.authenticated ? '西瓜Naive' : null);
+            setAdminUser(adminData.authenticated ? (adminData.username || '西瓜Naive') : null);
         }).catch(() => {
             setUser(null);
             setAdminUser(null);

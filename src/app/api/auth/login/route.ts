@@ -43,7 +43,9 @@ export async function POST(request: Request) {
         return NextResponse.json({ success: false, error: '用户名或密码错误' }, { status: 401 });
     }
 
-    const token = await createSessionToken(username);
+    // Use the canonical username stored in the DB (so logging in via the
+    // legacy "admin" alias still resolves to 西瓜Naive everywhere)
+    const token = await createSessionToken(user.username);
     const response = NextResponse.json({ success: true });
     response.cookies.set('snack_admin_session', token, {
         httpOnly: true,
