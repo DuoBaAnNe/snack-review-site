@@ -74,8 +74,8 @@ export default function CategoryNav({
 
             {([
                 ['零食地图', 'map'],
-                ['零食新闻', 'news'],
-                ['成分研究', 'ingredients'],
+                ['食品资讯', 'news'],
+                ['成分科普', 'ingredients'],
             ] as const).map(([label, view]) => {
                 const isActive = activeView === view;
                 const baseClass = 'flex-1 min-w-[80px] px-3 py-2.5 text-sm font-medium text-center transition-colors border-r border-white/30 last:border-r-0';

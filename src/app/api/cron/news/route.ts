@@ -68,9 +68,9 @@ const RELEVANT = /零食|食品|糖果|饼干|坚果|巧克力|薯片|辣条|乳
 
 // Category rules — checked in order, first hit wins
 const CATEGORY_RULES: [string, RegExp][] = [
-    ['安全', /抽检|不合格|召回|下架|中毒|超标|违规|查处|曝光|315|变质|异物|投诉|处罚/],
+    ['食品安全', /抽检|不合格|召回|下架|中毒|超标|违规|查处|曝光|315|变质|异物|投诉|处罚/],
     ['法规', /法规|新规|国标|标准|条例|监管|政策|征求意见|管理办法|禁止|禁用|限量/],
-    ['研究', /研究|学术|论文|期刊|科学家|实验|发现|大学|科研|临床|营养学|队列/],
+    ['科研', /研究|学术|论文|期刊|科学家|实验|发现|大学|科研|临床|营养学|队列/],
     ['创新', /创新|新品|新技术|首款|首发|研发|推出|专利|升级|黑科技|新口味|新工艺|人造肉|细胞培养/],
     ['产业', /产业|市场|营收|财报|增长|出口|进口|工厂|投产|投资|并购|品牌|销量|供应链|上市|IPO|渠道|电商/],
 ];
@@ -241,8 +241,8 @@ export async function GET(request: Request) {
 
     // 4. Editorial mix: innovation/research/industry/regulation first;
     //    safety-incident stories capped at MAX_SAFETY per day
-    const safetyClusters = verified.filter((c) => classify(c[0].title) === '安全');
-    const otherClusters = verified.filter((c) => classify(c[0].title) !== '安全');
+    const safetyClusters = verified.filter((c) => classify(c[0].title) === '食品安全');
+    const otherClusters = verified.filter((c) => classify(c[0].title) !== '食品安全');
     const ordered = [...otherClusters, ...safetyClusters.slice(0, MAX_SAFETY)];
 
     // 5. Skip stories already on the news board; pick the final list

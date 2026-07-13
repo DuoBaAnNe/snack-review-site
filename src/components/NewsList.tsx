@@ -7,12 +7,15 @@ import type { NewsItem } from '@/types';
 // light and dark themes without extra CSS.
 const CATEGORIES: Record<string, { color: string; icon: string }> = {
     '创新': { color: '#f97316', icon: '💡' },
-    '研究': { color: '#3b82f6', icon: '🔬' },
+    '科研': { color: '#3b82f6', icon: '🔬' },
     '产业': { color: '#10b981', icon: '🏭' },
     '法规': { color: '#8b5cf6', icon: '📋' },
-    '安全': { color: '#ef4444', icon: '⚠️' },
+    '食品安全': { color: '#ef4444', icon: '⚠️' },
     '资讯': { color: '#6b7280', icon: '📰' },
     '环球美食': { color: '#eab308', icon: '🌍' },
+    // Legacy tags from earlier versions
+    '研究': { color: '#3b82f6', icon: '🔬' },
+    '安全': { color: '#ef4444', icon: '⚠️' },
 };
 
 function hexToRgba(hex: string, alpha: number): string {
