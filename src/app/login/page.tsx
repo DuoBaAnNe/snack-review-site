@@ -42,11 +42,15 @@ function LoginForm() {
     }
 
     return (
-        <div className="min-h-[60vh] flex items-center justify-center">
-            <div className="bg-white rounded-xl shadow-md p-8 w-full max-w-sm">
-                <h1 className="text-xl font-bold text-center text-gray-800 mb-6">
-                    {isRegister ? '注册' : '登录'}
-                </h1>
+        <div className="min-h-[70vh] flex items-center justify-center px-4">
+            <div className="bg-white rounded-2xl shadow-lg border border-gray-100 p-8 w-full max-w-sm">
+                <div className="text-center mb-6">
+                    <div className="text-2xl font-black text-gray-900 tracking-tight">七零十</div>
+                    <p className="text-xs text-gray-400 mt-1">属于所有人的零食测评</p>
+                    <h1 className="text-lg font-bold text-gray-800 mt-4">
+                        {isRegister ? '注册新账号' : '登录'}
+                    </h1>
+                </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-gray-600 mb-1">邮箱</label>
@@ -84,7 +88,7 @@ function LoginForm() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full py-2 bg-gradient-to-r from-amber-400 to-orange-500 text-white font-semibold rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                        className="w-full py-2.5 bg-gradient-to-r from-amber-400 to-orange-500 text-white font-semibold rounded-full hover:opacity-90 transition-opacity disabled:opacity-50"
                     >
                         {loading ? '请稍候...' : isRegister ? '注册' : '登录'}
                     </button>

@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { useSearchParams } from 'next/navigation';
 import type { Snack, NewsItem } from '@/types';
-import CategoryNav from './CategoryNav';
+import HomeSidebar from './HomeSidebar';
 import SearchModal from './SearchModal';
 import SnackGrid from './SnackGrid';
 import NewsList from './NewsList';
@@ -12,11 +12,8 @@ import IngredientsView from './IngredientsView';
 
 const WorldSnackMap = dynamic(() => import('./WorldSnackMap'), {
     loading: () => (
-        <div className="bg-white rounded-xl shadow-md border border-gray-100 p-4">
-            <h2 className="text-lg font-bold text-gray-800 mb-2 text-center">零食地图</h2>
-            <div className="animate-pulse h-[520px] bg-gray-100 rounded-lg flex items-center justify-center">
-                <span className="text-gray-400">加载中...</span>
-            </div>
+        <div className="animate-pulse h-[520px] bg-gray-100 flex items-center justify-center">
+            <span className="text-gray-400">零食地图加载中…</span>
         </div>
     ),
     ssr: false,
@@ -33,58 +30,46 @@ interface Props {
     news: NewsItem[];
 }
 
-type ViewMode = 'snacks' | 'news' | 'ingredients' | 'map';
-const VALID_VIEWS: ViewMode[] = ['snacks', 'news', 'ingredients', 'map'];
+function SectionTitle({ icon, title, hint }: { icon: string; title: string; hint?: string }) {
+    return (
+        <div className="flex items-baseline gap-2 mb-4">
+            <span className="text-xl">{icon}</span>
+            <h2 className="text-xl font-black text-gray-900">{title}</h2>
+            {hint && <span className="text-xs text-gray-400">{hint}</span>}
+        </div>
+    );
+}
 
 export default function HomePageContent({ snacks, news }: Props) {
     const searchParams = useSearchParams();
-
-    // Initialize view/category from the URL so filtered views are shareable
-    const urlView = searchParams.get('view');
-    const initialView: ViewMode = VALID_VIEWS.includes(urlView as ViewMode) ? (urlView as ViewMode) : 'snacks';
-    const [viewMode, setViewMode] = useState<ViewMode>(initialView);
     const [activeCategory, setActiveCategory] = useState<string | null>(searchParams.get('cat'));
     const [searchOpen, setSearchOpen] = useState(false);
+    const [menuOpen, setMenuOpen] = useState(false);
     const [isAdmin, setIsAdmin] = useState(false);
 
-    // Follow URL changes too (e.g. the 返回首页 button navigates to "/"),
-    // so the view resets when the address changes
-    useEffect(() => {
-        const v = searchParams.get('view');
-        setViewMode(VALID_VIEWS.includes(v as ViewMode) ? (v as ViewMode) : 'snacks');
-        setActiveCategory(searchParams.get('cat'));
-    }, [searchParams]);
-
-    // One admin check for the whole page (instead of one per card)
     useEffect(() => {
         fetch('/api/auth/check')
-            .then(res => res.json())
-            .then(data => setIsAdmin(data.authenticated))
+            .then((res) => res.json())
+            .then((data) => setIsAdmin(data.authenticated))
             .catch(() => setIsAdmin(false));
     }, []);
 
-    const applyState = useCallback((view: ViewMode, cat: string | null) => {
-        setViewMode(view);
+    const selectCategory = useCallback((cat: string | null) => {
         setActiveCategory(cat);
-        const params = new URLSearchParams();
-        if (view !== 'snacks') params.set('view', view);
-        if (cat) params.set('cat', cat);
-        const qs = params.toString();
-        // Native history update: the URL changes instantly with no server
-        // round-trip (router.replace waits for the overseas server, which
-        // made the address bar lag or not update at all)
-        window.history.replaceState(null, '', qs ? `/?${qs}` : '/');
+        window.history.replaceState(null, '', cat ? `/?cat=${encodeURIComponent(cat)}` : '/');
+        document.getElementById('sec-snacks')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, []);
 
-    const filtered = activeCategory
-        ? snacks.filter((s) => s.category === activeCategory)
-        : snacks;
+    const goSection = useCallback((id: string) => {
+        document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, []);
+
+    const filtered = activeCategory ? snacks.filter((s) => s.category === activeCategory) : snacks;
 
     const ingredientsData = useMemo(() => {
         const map = new Map<string, IngredientEntry>();
         for (const snack of snacks) {
             if (!snack.ingredients) continue;
-            // Split on separators but NOT inside parentheses
             const raw = snack.ingredients;
             const parts: string[] = [];
             let depth = 0;
@@ -97,37 +82,20 @@ export default function HomePageContent({ snacks, news }: Props) {
                     const trimmed = current.trim();
                     if (trimmed.length > 0 && trimmed.length < 30) parts.push(trimmed);
                     current = '';
-                } else {
-                    current += ch;
-                }
+                } else { current += ch; }
             }
             const trimmed = current.trim();
             if (trimmed.length > 0 && trimmed.length < 30) parts.push(trimmed);
             const uniqueParts = [...new Set(parts)];
-
             for (const part of uniqueParts) {
                 const existing = map.get(part);
                 if (existing) {
                     if (!existing.snacks.some((s) => s.id === snack.id)) {
                         existing.count++;
-                        existing.snacks.push({
-                            id: snack.id,
-                            product_name: snack.product_name,
-                            brand_name: snack.brand_name,
-                            category: snack.category,
-                        });
+                        existing.snacks.push({ id: snack.id, product_name: snack.product_name, brand_name: snack.brand_name, category: snack.category });
                     }
                 } else {
-                    map.set(part, {
-                        name: part,
-                        count: 1,
-                        snacks: [{
-                            id: snack.id,
-                            product_name: snack.product_name,
-                            brand_name: snack.brand_name,
-                            category: snack.category,
-                        }],
-                    });
+                    map.set(part, { name: part, count: 1, snacks: [{ id: snack.id, product_name: snack.product_name, brand_name: snack.brand_name, category: snack.category }] });
                 }
             }
         }
@@ -136,31 +104,57 @@ export default function HomePageContent({ snacks, news }: Props) {
 
     return (
         <>
-            <div className="full-bleed bg-gradient-to-b from-rose-100/50 to-gray-50 pt-2 pb-1 px-4">
-                <CategoryNav
-                    activeCategory={activeCategory}
-                    activeView={viewMode}
-                    onSelectCategory={(cat) => applyState('snacks', cat)}
-                    onSelectMap={() => applyState('map', activeCategory)}
-                    onSelectNews={() => applyState('news', activeCategory)}
-                    onSelectIngredients={() => applyState('ingredients', activeCategory)}
-                    onOpenSearch={() => setSearchOpen(true)}
-                />
-            </div>
-            <div className="mt-4">
-                {viewMode === 'snacks' && <SnackGrid snacks={filtered} isAdmin={isAdmin} />}
-                {viewMode === 'map' && <WorldSnackMap snacks={snacks} />}
-                {viewMode === 'news' && <NewsList news={news} />}
-                {viewMode === 'ingredients' && (
+            {/* Hamburger — sits to the LEFT of the 七零十 title; toggles the menu */}
+            <button
+                onClick={() => setMenuOpen((v) => !v)}
+                aria-label={menuOpen ? '关闭菜单' : '打开菜单'}
+                className="fixed top-2.5 left-2 z-50 w-9 h-9 rounded-lg flex items-center justify-center text-gray-600 hover:bg-white/60 transition-colors"
+            >
+                <span className="text-xl leading-none">☰</span>
+            </button>
+
+            <HomeSidebar
+                open={menuOpen}
+                onClose={() => setMenuOpen(false)}
+                activeCategory={activeCategory}
+                onSelectCategory={selectCategory}
+                onGoSection={goSection}
+                onOpenSearch={() => setSearchOpen(true)}
+            />
+
+            <div className="space-y-14 pb-16">
+                {/* Snacks */}
+                <section id="sec-snacks" className="scroll-mt-16 max-w-[1400px] mx-auto px-3 md:px-6 pt-4">
+                    <SectionTitle icon="🍬" title={activeCategory || '全部零食'} hint={`${filtered.length} 款`} />
+                    <SnackGrid snacks={filtered} isAdmin={isAdmin} />
+                </section>
+
+                {/* Map — warm full-bleed colour band spanning the viewport width */}
+                <section id="sec-map" className="scroll-mt-16">
+                    <div className="max-w-[1400px] mx-auto px-3 md:px-6">
+                        <SectionTitle icon="🗺️" title="零食地图" hint="按产地看分布" />
+                    </div>
+                    <div className="full-bleed" style={{ backgroundColor: '#faf0e4' }}>
+                        <div className="max-w-[1400px] mx-auto px-3 md:px-6">
+                            <WorldSnackMap snacks={snacks} />
+                        </div>
+                    </div>
+                </section>
+
+                {/* News */}
+                <section id="sec-news" className="scroll-mt-16 max-w-[1400px] mx-auto px-3 md:px-6">
+                    <SectionTitle icon="📰" title="食品资讯" hint="每日自动更新" />
+                    <NewsList news={news} />
+                </section>
+
+                {/* Ingredients */}
+                <section id="sec-ing" className="scroll-mt-16 max-w-[1400px] mx-auto px-3 md:px-6">
+                    <SectionTitle icon="🔬" title="成分科普" hint="点配料看科普" />
                     <IngredientsView ingredients={ingredientsData} totalSnacks={snacks.length} />
-                )}
+                </section>
             </div>
-            {searchOpen && (
-                <SearchModal
-                    snacks={snacks}
-                    onClose={() => setSearchOpen(false)}
-                />
-            )}
+
+            {searchOpen && <SearchModal snacks={snacks} onClose={() => setSearchOpen(false)} />}
         </>
     );
 }

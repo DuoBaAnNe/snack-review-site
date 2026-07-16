@@ -3,27 +3,20 @@
 import { useState } from 'react';
 import type { NewsItem } from '@/types';
 
-// Category badge colors — inline rgba tints so they read well in both
-// light and dark themes without extra CSS.
-const CATEGORIES: Record<string, { color: string; icon: string }> = {
-    '创新': { color: '#f97316', icon: '💡' },
-    '科研': { color: '#3b82f6', icon: '🔬' },
-    '产业': { color: '#10b981', icon: '🏭' },
-    '法规': { color: '#8b5cf6', icon: '📋' },
-    '食品安全': { color: '#ef4444', icon: '⚠️' },
-    '资讯': { color: '#6b7280', icon: '📰' },
-    '环球美食': { color: '#eab308', icon: '🌍' },
-    // Legacy tags from earlier versions
-    '研究': { color: '#3b82f6', icon: '🔬' },
-    '安全': { color: '#ef4444', icon: '⚠️' },
+// Category → badge color, cover emoji, and a cover gradient (two stops).
+const CATEGORIES: Record<string, { color: string; icon: string; grad: [string, string] }> = {
+    '创新': { color: '#f97316', icon: '💡', grad: ['#fb923c', '#ea580c'] },
+    '科研': { color: '#3b82f6', icon: '🔬', grad: ['#60a5fa', '#2563eb'] },
+    '产业': { color: '#10b981', icon: '🏭', grad: ['#34d399', '#059669'] },
+    '法规': { color: '#8b5cf6', icon: '📋', grad: ['#a78bfa', '#7c3aed'] },
+    '食品安全': { color: '#ef4444', icon: '⚠️', grad: ['#f87171', '#dc2626'] },
+    '资讯': { color: '#6b7280', icon: '📰', grad: ['#9ca3af', '#4b5563'] },
+    '环球美食': { color: '#eab308', icon: '🌍', grad: ['#fbbf24', '#d97706'] },
+    // Legacy tags
+    '研究': { color: '#3b82f6', icon: '🔬', grad: ['#60a5fa', '#2563eb'] },
+    '安全': { color: '#ef4444', icon: '⚠️', grad: ['#f87171', '#dc2626'] },
 };
-
-function hexToRgba(hex: string, alpha: number): string {
-    const r = parseInt(hex.slice(1, 3), 16);
-    const g = parseInt(hex.slice(3, 5), 16);
-    const b = parseInt(hex.slice(5, 7), 16);
-    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
+const FALLBACK = CATEGORIES['资讯'];
 
 function parseTitle(raw: string): { cat: string | null; title: string } {
     const m = raw.match(/^【([^】]{1,6})】\s*(.*)$/);
@@ -31,38 +24,48 @@ function parseTitle(raw: string): { cat: string | null; title: string } {
     return { cat: null, title: raw };
 }
 
+const MAX_ROWS = 6;
+const COLS = 3;               // lg grid columns
+const MAX_SHOWN = MAX_ROWS * COLS; // at most 6 rows
+
 export default function NewsList({ news }: { news: NewsItem[] }) {
-    const [expandedId, setExpandedId] = useState<number | null>(null);
+    const [expanded, setExpanded] = useState<Set<number>>(new Set());
     const [filter, setFilter] = useState<string | null>(null);
+    const [showAll, setShowAll] = useState(false);
 
     if (news.length === 0) {
         return (
-            <div className="bg-white rounded-xl border border-gray-100 p-12 text-center">
-                <p className="text-gray-400">暂无新闻，敬请期待！</p>
+            <div className="bg-white rounded-2xl border border-gray-100 p-12 text-center">
+                <p className="text-gray-400">还没有资讯，敬请期待！</p>
             </div>
         );
     }
 
-    // Which categories actually appear (for the filter chips)
     const presentCats = [...new Set(
         news.map((n) => parseTitle(n.title).cat).filter((c): c is string => !!c && !!CATEGORIES[c])
     )];
 
-    const shown = filter
-        ? news.filter((n) => parseTitle(n.title).cat === filter)
-        : news;
+    const matched = filter ? news.filter((n) => parseTitle(n.title).cat === filter) : news;
+    const shown = showAll ? matched : matched.slice(0, MAX_SHOWN);
+    const hasMore = matched.length > MAX_SHOWN;
+
+    function toggle(id: number) {
+        setExpanded((prev) => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    }
 
     return (
         <div>
-            {/* Category filter chips */}
+            {/* Category filters */}
             {presentCats.length > 1 && (
-                <div className="flex flex-wrap items-center gap-2 mb-4">
+                <div className="flex flex-wrap items-center gap-2 mb-5">
                     <button
                         onClick={() => setFilter(null)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
-                            filter === null
-                                ? 'bg-amber-400 text-white border-amber-400'
-                                : 'bg-white text-gray-500 border-gray-200 hover:border-amber-300'
+                        className={`px-3.5 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                            filter === null ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-400'
                         }`}
                     >
                         全部
@@ -74,10 +77,10 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
                             <button
                                 key={cat}
                                 onClick={() => setFilter(active ? null : cat)}
-                                className="px-3 py-1 rounded-full text-xs font-medium border transition-colors"
+                                className="px-3.5 py-1.5 rounded-full text-xs font-medium border transition-colors"
                                 style={active
                                     ? { backgroundColor: meta.color, color: '#fff', borderColor: meta.color }
-                                    : { backgroundColor: hexToRgba(meta.color, 0.12), color: meta.color, borderColor: hexToRgba(meta.color, 0.3) }}
+                                    : { backgroundColor: '#fff', color: meta.color, borderColor: meta.color + '55' }}
                             >
                                 {meta.icon} {cat}
                             </button>
@@ -86,69 +89,73 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
                 </div>
             )}
 
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
                 {shown.map((item) => {
                     const { cat, title } = parseTitle(item.title);
-                    const meta = (cat && CATEGORIES[cat]) || null;
-                    const accent = meta?.color || '#d1d5db';
-                    const isWorldFood = cat === '环球美食';
-                    const isExpanded = expandedId === item.id;
-                    const preview = item.content.length > 150
-                        ? item.content.slice(0, 150) + '...'
-                        : item.content;
-
+                    const meta = (cat && CATEGORIES[cat]) || FALLBACK;
+                    const isExp = expanded.has(item.id);
+                    const date = item.created_at.slice(0, 10);
                     return (
                         <article
                             key={item.id}
-                            className="bg-white rounded-xl border border-gray-100 p-5 md:p-6 hover:shadow-md transition-shadow"
-                            style={{ borderLeft: `4px solid ${accent}` }}
+                            className="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col"
                         >
-                            <div className="flex items-center gap-2 mb-2">
-                                {meta && (
-                                    <span
-                                        className="px-2 py-0.5 rounded-full text-[11px] font-semibold shrink-0"
-                                        style={{ backgroundColor: hexToRgba(accent, 0.13), color: accent }}
-                                    >
-                                        {meta.icon} {cat}
-                                    </span>
-                                )}
-                                <time className="text-xs text-gray-400 ml-auto shrink-0">
-                                    {item.created_at.slice(0, 10)}
-                                </time>
+                            {/* Cover */}
+                            <div
+                                className="relative h-32 overflow-hidden"
+                                style={{ background: `linear-gradient(135deg, ${meta.grad[0]}, ${meta.grad[1]})` }}
+                            >
+                                <span className="absolute -right-2 -bottom-3 text-[92px] leading-none opacity-25 select-none group-hover:scale-110 transition-transform origin-bottom-right">
+                                    {meta.icon}
+                                </span>
+                                <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-white/25 backdrop-blur text-white text-[11px] font-semibold">
+                                    {meta.icon} {cat || '资讯'}
+                                </span>
+                                <time className="absolute top-3.5 right-3 text-[11px] text-white/90 font-medium">{date}</time>
                             </div>
 
-                            <h2 className={`font-semibold text-gray-900 mb-2 leading-snug ${isWorldFood ? 'text-xl' : 'text-lg'}`}>
-                                {title}
-                            </h2>
-
-                            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">
-                                {isExpanded ? item.content : preview}
-                            </p>
-
-                            <div className="flex items-center gap-3 mt-3">
-                                {item.content.length > 150 && (
-                                    <button
-                                        onClick={() => setExpandedId(isExpanded ? null : item.id)}
-                                        className="text-xs text-orange-500 hover:text-orange-600"
-                                    >
-                                        {isExpanded ? '收起' : '展开全文'}
-                                    </button>
-                                )}
-                                {item.source_url && (
-                                    <a
-                                        href={item.source_url}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-500 hover:text-orange-500 hover:border-orange-300 transition-colors"
-                                    >
-                                        阅读原文 ↗
-                                    </a>
-                                )}
+                            {/* Body */}
+                            <div className="p-4 flex flex-col flex-1">
+                                <h3 className="font-bold text-gray-900 leading-snug line-clamp-2 mb-2">{title}</h3>
+                                <p className={`text-sm text-gray-600 leading-relaxed whitespace-pre-wrap ${isExp ? '' : 'line-clamp-3'}`}>
+                                    {item.content}
+                                </p>
+                                <div className="mt-auto pt-3 flex items-center gap-3">
+                                    {item.content.length > 90 && (
+                                        <button
+                                            onClick={() => toggle(item.id)}
+                                            className="text-xs font-medium text-orange-500 hover:text-orange-600"
+                                        >
+                                            {isExp ? '收起' : '展开全文'}
+                                        </button>
+                                    )}
+                                    {item.source_url && (
+                                        <a
+                                            href={item.source_url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="ml-auto text-xs px-2.5 py-1 rounded-full border border-gray-200 text-gray-500 hover:text-orange-500 hover:border-orange-300 transition-colors"
+                                        >
+                                            阅读原文 ↗
+                                        </a>
+                                    )}
+                                </div>
                             </div>
                         </article>
                     );
                 })}
             </div>
+
+            {hasMore && (
+                <div className="text-center mt-6">
+                    <button
+                        onClick={() => setShowAll((v) => !v)}
+                        className="px-5 py-2 rounded-full border border-gray-200 text-sm text-gray-600 hover:border-orange-300 hover:text-orange-500 transition-colors"
+                    >
+                        {showAll ? '收起' : `查看更多资讯（共 ${matched.length} 条）`}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

@@ -80,7 +80,25 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
     const containerRef = useRef<HTMLDivElement>(null);
     const instanceRef = useRef<echarts.ECharts | null>(null);
     const [mapState, setMapState] = useState<'loading' | 'ready' | 'error'>('loading');
+    const [chartH, setChartH] = useState(540);
     const [isDark, setIsDark] = useState(false);
+
+    // Size the chart so China's east-west extent spans the full content
+    // width; height follows the map's natural aspect ratio.
+    useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const apply = () => setChartH(Math.max(380, Math.round(el.clientWidth * 0.72)));
+        const ro = new ResizeObserver(apply);
+        ro.observe(el);
+        apply();
+        return () => ro.disconnect();
+    }, []);
+
+    // Re-fit the chart whenever its box height changes
+    useEffect(() => {
+        instanceRef.current?.resize();
+    }, [chartH]);
 
     // Track theme changes (moon/sun toggle or system setting) so the chart
     // background always matches the card behind it — avoids jagged edges
@@ -192,12 +210,15 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
         const option: EChartsCoreOption = {
             // Solid color matching the card behind it, per theme — a solid
             // background lets the canvas anti-alias the province edges
-            backgroundColor: isDark ? '#1c2230' : '#ffffff',
+            backgroundColor: '#faf0e4',
             tooltip: { show: false }, // we handle tooltip ourselves
             series: [{
                 type: 'map',
                 map: 'china',
                 roam: false,
+                // Stretch the map so its east-west extent fills the container
+                layoutCenter: ['50%', '50%'],
+                layoutSize: '98%',
                 label: { show: false }, // labels off by default
                 emphasis: {
                     label: { show: true, fontSize: 14, fontWeight: 'bold', color: '#333' },
@@ -268,11 +289,10 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
     }, [mapState, provinceMap, provincesWithSnacks, maxCount, getGreen, isDark]);
 
     return (
-        <div className="bg-white rounded-xl shadow-md border border-gray-100 p-4">
-            <h2 className="text-lg font-bold text-gray-800 mb-2 text-center">零食地图</h2>
-            <div ref={containerRef} className="relative mx-auto" style={{ maxWidth: 640 }}>
+        <div>
+            <div ref={containerRef} className="relative mx-auto w-full">
                 {mapState === 'ready' ? (
-                    <div ref={chartRef} style={{ width: '100%', height: 500 }} />
+                    <div ref={chartRef} style={{ width: '100%', height: chartH }} />
                 ) : mapState === 'loading' ? (
                     <div className="h-[500px] animate-pulse bg-gray-100 rounded-lg flex items-center justify-center">
                         <span className="text-gray-400">地图资源加载中...</span>
@@ -334,11 +354,6 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
                         </p>
                     </div>
                 )}
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2 justify-center text-xs text-gray-500">
-                <span>共 {provincesWithSnacks.size} 个省份有零食记录</span>
-                <span>·</span>
-                <span>总计 {snacks.length} 款零食</span>
             </div>
         </div>
     );

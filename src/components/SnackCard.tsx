@@ -243,6 +243,11 @@ export default function SnackCard({ snack, isAdmin: isAdminProp }: { snack: Snac
                             </>
                         )}
                     </p>
+                    {snack.created_by && snack.created_at && (
+                        <p className="text-xs text-gray-400 mt-0.5">
+                            首评时间 {snack.created_at.slice(0, 10)}
+                        </p>
+                    )}
 
                     {ingredients.length > 0 ? (
                         <div className="mt-3">

@@ -1,62 +1,76 @@
-const SNACKS = ['🍪', '🍫', '🍬', '🍩', '🍿', '🍭', '🧁', '🍘', '🍯', '🥜', '🍟', '🧋', '🍡', '🍮', '🧃'];
-const MOBILE_SNACKS = SNACKS.slice(0, 8);
+'use client';
 
-function FallingSnack({ emoji, idx }: { emoji: string; idx: number }) {
-    const left = ((idx * 7.3 + 2.1) % 96) + 2;
-    const delay = (idx * 0.37) % 3;
-    const duration = 3.5 + (idx * 0.43) % 4.5;
-    const size = 1.2 + (idx % 3) * 0.4;
-    const drift = (idx % 2 === 0 ? 1 : -1) * (20 + (idx * 7) % 40);
-    // Spread emojis vertically across the banner so they don't cluster at top
-    const top = ((idx * 13.7 + 5.3) % 90);
+import { useEffect, useState } from 'react';
 
-    return (
-        <span
-            className="absolute select-none pointer-events-none"
-            style={{
-                left: `${left}%`,
-                top: `${top}%`,
-                fontSize: `${size}rem`,
-                animation: `fallToButtons ${duration}s ${delay}s linear infinite backwards`,
-                '--drift': `${drift}px`,
-            } as React.CSSProperties}
-        >
-            {emoji}
-        </span>
-    );
+// 建站日 2026-05-21；百年纪念日 2126-05-21。
+const FOUNDED = new Date('2026-05-21T00:00:00+08:00').getTime();
+const CENTENNIAL = new Date('2126-05-21T00:00:00+08:00').getTime();
+
+function breakdown(ms: number) {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const YEAR = 31556952; // average Gregorian year in seconds
+    const years = Math.floor(s / YEAR);
+    let rem = s - years * YEAR;
+    const days = Math.floor(rem / 86400); rem -= days * 86400;
+    const h = Math.floor(rem / 3600); rem -= h * 3600;
+    const m = Math.floor(rem / 60);
+    const sec = rem - m * 60;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return { years, days, time: `${pad(h)}:${pad(m)}:${pad(sec)}` };
 }
 
 export default function Banner() {
-    return (
-        <div className="relative w-full overflow-hidden bg-gradient-to-b from-amber-100 via-orange-50 to-rose-100 py-4 md:py-6" style={{ containerType: 'inline-size' }}>
-            {/* Falling emojis */}
-            <div className="hidden md:block absolute inset-0">
-                {SNACKS.map((emoji, i) => (
-                    <FallingSnack key={i} emoji={emoji} idx={i} />
-                ))}
-            </div>
-            <div className="md:hidden absolute inset-0">
-                {MOBILE_SNACKS.map((emoji, i) => (
-                    <FallingSnack key={i} emoji={emoji} idx={i} />
-                ))}
-            </div>
+    const [now, setNow] = useState<number | null>(null);
 
-            {/* Header: Title (center) */}
-            <div className="relative z-10 flex flex-col items-center justify-center text-center px-4">
-                <h1
-                    className="text-2xl md:text-4xl font-black tracking-widest leading-tight"
-                    style={{
-                        background: 'linear-gradient(135deg, #f97316 0%, #ec4899 100%)',
-                        backgroundClip: 'text',
-                        WebkitBackgroundClip: 'text',
-                        WebkitTextFillColor: 'transparent',
-                    }}
-                >
-                    欢迎来到七零十
-                </h1>
-                <p className="mt-1 md:mt-2 text-sm md:text-lg font-bold text-orange-500 tracking-wider drop-shadow-sm">
-                    属于所有人的零食测评网站
-                </p>
+    useEffect(() => {
+        setNow(Date.now());
+        const t = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(t);
+    }, []);
+
+    // The dial shows time REMAINING to the centennial — it slowly depletes
+    // over the century, ticking down live like a countdown clock.
+    const remainFrac = now
+        ? Math.min(1, Math.max(0, (CENTENNIAL - now) / (CENTENNIAL - FOUNDED)))
+        : 1;
+    const c = breakdown(now ? CENTENNIAL - now : 0);
+
+    const R = 13;
+    const CIRC = 2 * Math.PI * R;
+
+    return (
+        <div className="flex items-center gap-2.5 min-w-0">
+            {/* Wordmark doubles as the home link — available on every page */}
+            <a
+                href="/"
+                title="返回首页"
+                className="text-[22px] md:text-2xl font-black text-gray-900 tracking-tight shrink-0 hover:text-orange-500 transition-colors"
+            >
+                七零十
+            </a>
+
+            {/* Centennial countdown dial */}
+            <div className="hidden sm:flex items-center gap-2 shrink-0 pl-2.5 border-l border-gray-200">
+                <div className="relative w-[34px] h-[34px] shrink-0">
+                    <svg width="34" height="34" viewBox="0 0 34 34" className="-rotate-90">
+                        <circle cx="17" cy="17" r={R} fill="none" stroke="#f3e8db" strokeWidth="4" />
+                        <circle
+                            cx="17" cy="17" r={R} fill="none"
+                            stroke="#f97316" strokeWidth="4" strokeLinecap="round"
+                            strokeDasharray={CIRC}
+                            strokeDashoffset={CIRC * (1 - remainFrac)}
+                        />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-[9px] font-black text-orange-500">
+                        100
+                    </span>
+                </div>
+                <div className="leading-tight">
+                    <div className="text-[10px] text-gray-400">距离百年零食测评网还差</div>
+                    <div className="text-xs font-bold text-gray-800 tabular-nums">
+                        {now ? `${c.years} 年 ${c.days} 天 ${c.time}` : '——'}
+                    </div>
+                </div>
             </div>
         </div>
     );

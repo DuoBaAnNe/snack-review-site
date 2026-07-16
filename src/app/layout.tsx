@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { cookies } from "next/headers";
 import "./globals.css";
 import Banner from "@/components/Banner";
 import HeaderButtons from "@/components/HeaderButtons";
@@ -10,25 +9,18 @@ export const metadata: Metadata = {
     description: "零食评测记录 - 挑战测评10000款零食，发现你的下一口美味",
 };
 
-export default async function RootLayout({
+export default function RootLayout({
     children,
 }: Readonly<{
     children: React.ReactNode;
 }>) {
-    // The chosen theme is stored in a cookie so the server can render the
-    // right mode directly — no scripts, no flash. Without a cookie the
-    // data-theme attribute is omitted and CSS falls back to the system setting.
-    const cookieStore = await cookies();
-    const saved = cookieStore.get('llq-theme')?.value;
-    const theme = saved === 'dark' || saved === 'light' ? saved : undefined;
-
     return (
-        <html lang="zh-CN" className="h-full antialiased" data-theme={theme} suppressHydrationWarning>
+        <html lang="zh-CN" className="h-full antialiased">
             <body className="min-h-full flex flex-col bg-gray-50">
-                <div className="relative">
+                <header className="sticky top-0 z-50 flex items-center justify-between gap-3 pl-12 pr-3 md:pr-5 h-14 bg-white/90 backdrop-blur-md border-b border-gray-200/70">
                     <Banner />
                     <HeaderButtons />
-                </div>
+                </header>
                 <main className="flex-1">
                     {children}
                 </main>
