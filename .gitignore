@@ -47,6 +47,5 @@ database/snacks.db-*
 
 # uploaded images (keep folder, ignore contents)
 public/uploads/*
-auth*
 
 .vercel
