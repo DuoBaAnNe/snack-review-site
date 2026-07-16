@@ -25,19 +25,34 @@ function LoginForm() {
             ? { email, username, password }
             : { email, password };
 
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
+        try {
+            // 20s timeout so the button can never hang on 请稍候 forever
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 20000);
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+            });
+            clearTimeout(timer);
 
-        const data = await res.json();
-        setLoading(false);
+            let data: { error?: string } | null = null;
+            try { data = await res.json(); } catch { /* non-JSON error page */ }
 
-        if (res.ok) {
-            await router.push('/');
-        } else {
-            setError(data.error || '操作失败');
+            if (res.ok) {
+                // Full navigation so the header picks up the new session reliably
+                window.location.href = '/';
+                return;
+            }
+            setError(data?.error || `操作失败（服务器返回 ${res.status}），请把这个数字告诉站长`);
+        } catch (err: unknown) {
+            const name = (err as { name?: string })?.name;
+            setError(name === 'AbortError'
+                ? '服务器响应超时（20秒无回应），请稍后重试'
+                : '网络异常，请检查网络后重试');
+        } finally {
+            setLoading(false);
         }
     }
 

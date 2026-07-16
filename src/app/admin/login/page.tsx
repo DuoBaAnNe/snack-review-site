@@ -15,19 +15,32 @@ export default function AdminLoginPage() {
         setError('');
         setLoading(true);
 
-        const res = await fetch('/api/auth/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username, password }),
-        });
+        try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 20000);
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password }),
+                signal: controller.signal,
+            });
+            clearTimeout(timer);
 
-        const data = await res.json();
-        setLoading(false);
+            let data: { success?: boolean; error?: string } | null = null;
+            try { data = await res.json(); } catch { /* non-JSON error page */ }
 
-        if (data.success) {
-            router.push('/admin');
-        } else {
-            setError(data.error || '登录失败');
+            if (data?.success) {
+                window.location.href = '/admin';
+                return;
+            }
+            setError(data?.error || `登录失败（服务器返回 ${res.status}）`);
+        } catch (err: unknown) {
+            const name = (err as { name?: string })?.name;
+            setError(name === 'AbortError'
+                ? '服务器响应超时（20秒无回应），请稍后重试'
+                : '网络异常，请检查网络后重试');
+        } finally {
+            setLoading(false);
         }
     }
 
