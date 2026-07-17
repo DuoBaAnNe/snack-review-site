@@ -20,6 +20,76 @@ function chunk<T>(arr: T[], size: number): T[][] {
     return out;
 }
 
+// --- Hover "snack rain" ---
+// Pretty backgrounds, picked deterministically per snack so each card
+// always rains on the same colour.
+const RAIN_BG = [
+    'linear-gradient(160deg, #ffe9c7, #ffb26b)',
+    'linear-gradient(160deg, #ffd6e8, #ff8fab)',
+    'linear-gradient(160deg, #d9f7e8, #6fd6a3)',
+    'linear-gradient(160deg, #dbeafe, #93c5fd)',
+    'linear-gradient(160deg, #fef9c3, #fde047)',
+    'linear-gradient(160deg, #ede9fe, #c4b5fd)',
+    'linear-gradient(160deg, #ffe4e6, #fda4af)',
+    'linear-gradient(160deg, #cffafe, #67e8f9)',
+];
+// Falling drops are generated per snack from its id, so every snack has its
+// own unique rain (count, positions, sizes, speeds) that stays stable
+// between hovers. Positive delays stagger the drops so each one enters
+// from above the card edge instead of popping in mid-air.
+function seededRand(seed: number) {
+    let s = seed | 0;
+    return function () {
+        s = (s + 0x6D2B79F5) | 0;
+        let t = Math.imul(s ^ (s >>> 15), 1 | s);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+}
+
+interface Drop { left: string; size: number; dur: number; delay: number; spin: number }
+
+// Size tiers with probabilities — a rare "blocks the lens" giant, down to
+// tiny crumbs. Weights sum to 1.
+const SIZE_TIERS = [
+    { p: 0.05, min: 340, max: 420 }, // 挡住镜头级
+    { p: 0.10, min: 150, max: 220 }, // 大
+    { p: 0.20, min: 95, max: 150 },  // 中大
+    { p: 0.30, min: 60, max: 95 },   // 中
+    { p: 0.25, min: 38, max: 60 },   // 小
+    { p: 0.10, min: 22, max: 38 },   // 迷你
+];
+
+function pickSize(rnd: () => number): number {
+    const x = rnd();
+    let acc = 0;
+    for (const t of SIZE_TIERS) {
+        acc += t.p;
+        if (x < acc) return Math.round(t.min + rnd() * (t.max - t.min));
+    }
+    return 60;
+}
+
+function dropsFor(id: number): Drop[] {
+    const rnd = seededRand(id * 7919 + 13);
+    const count = 11 + Math.floor(rnd() * 4); // 11–14 drops
+    return Array.from({ length: count }, () => {
+        const size = pickSize(rnd);
+        const giant = size > 300;
+        return {
+            // Giants hug the left half so most of them stays inside the card
+            left: `${Math.round(rnd() * (giant ? 30 : 92))}%`,
+            size,
+            // Giants fall slow and heavy; everyone else spans a wide
+            // fast-to-slow range so speed differences read clearly
+            dur: giant ? 6.5 + rnd() * 3 : 1.6 + rnd() * 7.4,
+            delay: rnd() * 5,
+            // Half spin clockwise, half counter-clockwise; giants barely tumble
+            spin: (rnd() < 0.5 ? -1 : 1) * Math.round(giant ? 30 + rnd() * 50 : 120 + rnd() * 260),
+        };
+    });
+}
+
 export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmin?: boolean }) {
     const wrapRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
@@ -142,6 +212,64 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                                                 <div className="absolute inset-0 flex items-center justify-center text-6xl bg-gray-100">🍪</div>
                                             )}
                                             <div className={`absolute inset-0 transition-colors duration-300 ${isFocus ? 'bg-black/12' : 'bg-black/30'}`} />
+                                            {/* Snack rain — endless falling copies of this snack on a pretty backdrop */}
+                                            {isFocus && cover && (
+                                                <div
+                                                    className="absolute inset-0"
+                                                    style={{ background: RAIN_BG[snack.id % RAIN_BG.length] }}
+                                                >
+                                                    {dropsFor(snack.id).map((d, i) => (
+                                                        cover.has_cutout ? (
+                                                            // Real background-removed PNG
+                                                            <img
+                                                                key={i}
+                                                                src={`/api/images/${cover.id}?cutout=1`}
+                                                                alt=""
+                                                                aria-hidden
+                                                                className="absolute object-contain"
+                                                                style={{
+                                                                    left: d.left,
+                                                                    // Start fully above the card so drops glide
+                                                                    // into view instead of popping in mid-air
+                                                                    top: -(d.size + 24),
+                                                                    width: d.size,
+                                                                    height: d.size,
+                                                                    filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.25))',
+                                                                    animation: `snack-rain ${d.dur}s linear infinite`,
+                                                                    animationDelay: `${d.delay}s`,
+                                                                    '--spin': `${d.spin}deg`,
+                                                                    '--fall': `${d.size + 500}px`,
+                                                                } as React.CSSProperties}
+                                                            />
+                                                        ) : (
+                                                            // Fallback: circular "sticker" crop
+                                                            <div
+                                                                key={i}
+                                                                aria-hidden
+                                                                className="absolute"
+                                                                style={{
+                                                                    left: d.left,
+                                                                    // Start fully above the card so drops glide
+                                                                    // into view instead of popping in mid-air
+                                                                    top: -(d.size + 24),
+                                                                    width: d.size,
+                                                                    height: d.size,
+                                                                    borderRadius: '50%',
+                                                                    backgroundImage: `url(${getImageUrl(cover)})`,
+                                                                    backgroundSize: '170%',
+                                                                    backgroundPosition: 'center 42%',
+                                                                    border: '2px solid rgba(255,255,255,0.9)',
+                                                                    boxShadow: '0 4px 10px rgba(0,0,0,0.18)',
+                                                                    animation: `snack-rain ${d.dur}s linear infinite`,
+                                                                    animationDelay: `${d.delay}s`,
+                                                                    '--spin': `${d.spin}deg`,
+                                                                    '--fall': `${d.size + 500}px`,
+                                                                } as React.CSSProperties}
+                                                            />
+                                                        )
+                                                    ))}
+                                                </div>
+                                            )}
                                             <span className="absolute top-3 left-3 px-2 py-0.5 rounded-full bg-white/95 text-sm font-black shadow" style={{ color: scoreColor(v) }}>
                                                 {v.toFixed(1)}
                                             </span>

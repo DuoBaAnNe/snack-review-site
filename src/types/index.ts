@@ -5,6 +5,7 @@ export interface SnackImage {
     data: string;
     mime_type: string;
     sort_order: number;
+    has_cutout?: boolean;
 }
 
 export interface Snack {

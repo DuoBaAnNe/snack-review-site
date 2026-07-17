@@ -162,6 +162,15 @@ async function initSchema() {
             console.error('Migration v6 error:', e);
         }
     }
+
+    // --- Migration v7: background-removed cutout PNG for snack images ---
+    try {
+        await client.execute("ALTER TABLE snack_images ADD COLUMN cutout TEXT NOT NULL DEFAULT ''");
+    } catch (e: any) {
+        if (!e.message?.includes('duplicate column') && !e.message?.includes('already exists')) {
+            console.error('Migration v7 error:', e);
+        }
+    }
 }
 
 // --- Snack queries ---
@@ -575,5 +584,6 @@ function rowToImage(row: any): SnackImage {
         data: '', // stripped — use /api/images/[id] to fetch
         mime_type: row.mime_type as string,
         sort_order: row.sort_order as number,
+        has_cutout: !!row.cutout, // cutout PNG itself is served via ?cutout=1
     };
 }

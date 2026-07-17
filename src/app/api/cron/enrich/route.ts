@@ -2,20 +2,23 @@ import { NextResponse } from 'next/server';
 import { getDb, getAllNews } from '@/lib/db';
 import { getSession } from '@/lib/auth';
 import { aiIntro } from '@/lib/ai-intro';
+import { isGoogleLink, resolveRealUrl } from '@/lib/resolve-link';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
-// Backfills AI intros for news items that were published with the thin
-// "N 家媒体报道…" format only. Admin-triggered; processes a batch per call
-// to stay inside the function time limit — visit repeatedly until done=0.
-const BATCH = 12;
+// Fixes up already-published news items:
+//   1. adds an AI intro to items published with the thin format only
+//   2. rewrites news.google.com redirect links (unreachable from mainland
+//      China) to the real publisher URL, or a Baidu search fallback
+// Admin-triggered; processes a batch per call to stay inside the function
+// time limit — visit repeatedly until remaining=0.
+const BATCH = 10;
 const CONCURRENCY = 4;
 
 function needsIntro(content: string): boolean {
     const t = content.trim();
-    // Thin items start directly with the source line or the old plain text
-    return t.startsWith('📰') || t.startsWith('�') || /^\d+\s*家媒体报道/.test(t);
+    return t.startsWith('📰') || /^\d+\s*家媒体报道/.test(t);
 }
 
 export async function GET(request: Request) {
@@ -30,35 +33,60 @@ export async function GET(request: Request) {
 
     try {
         const all = await getAllNews();
-        const thin = all.filter((n) => !n.title.startsWith('【环球美食】') && needsIntro(n.content));
-        const batch = thin.slice(0, BATCH);
+        const pending = all.filter((n) =>
+            !n.title.startsWith('【环球美食】')
+            && (needsIntro(n.content) || isGoogleLink(n.source_url))
+        );
+        const batch = pending.slice(0, BATCH);
 
         const db = await getDb();
-        let done = 0;
+        let introsAdded = 0;
+        let linksFixed = 0;
         const failed: string[] = [];
 
         for (let i = 0; i < batch.length; i += CONCURRENCY) {
             const group = batch.slice(i, i + CONCURRENCY);
             await Promise.all(group.map(async (item) => {
                 const cleanTitle = item.title.replace(/^【[^】]*】\s*/, '');
-                const intro = await aiIntro(cleanTitle);
-                if (!intro) { failed.push(cleanTitle.slice(0, 20)); return; }
-                const srcLine = (item.content.match(/📰[^\n]*/) || [])[0]
-                    || item.content.split('\n')[0];
-                const content = `${intro}\n\n${srcLine}\n—— 导读由 AI 辅助撰写，点击"阅读原文"查看完整报道`;
-                await db.execute('UPDATE news SET content = ? WHERE id = ?', [content, item.id]);
-                done++;
+
+                // New intro if the content is still the thin format
+                let newContent = item.content;
+                if (needsIntro(item.content)) {
+                    const intro = await aiIntro(cleanTitle);
+                    if (intro) {
+                        const srcLine = (item.content.match(/📰[^\n]*/) || [])[0]
+                            || item.content.split('\n')[0];
+                        newContent = `${intro}\n\n${srcLine}\n—— 导读由 AI 辅助撰写，点击"阅读原文"查看完整报道`;
+                        introsAdded++;
+                    } else {
+                        failed.push(cleanTitle.slice(0, 20));
+                    }
+                }
+
+                // Real publisher URL if the link still goes through Google
+                let newUrl = item.source_url;
+                if (isGoogleLink(item.source_url)) {
+                    newUrl = await resolveRealUrl(item.source_url, cleanTitle);
+                    if (newUrl !== item.source_url) linksFixed++;
+                }
+
+                if (newContent !== item.content || newUrl !== item.source_url) {
+                    await db.execute(
+                        'UPDATE news SET content = ?, source_url = ? WHERE id = ?',
+                        [newContent, newUrl, item.id]
+                    );
+                }
             }));
         }
 
+        const remaining = Math.max(0, pending.length - batch.length) + failed.length;
         return NextResponse.json({
             ok: true,
-            enriched: done,
-            remaining: thin.length - batch.length + failed.length,
+            introsAdded,
+            linksFixed,
+            remaining,
             failed,
-            tip: thin.length - batch.length + failed.length > 0
-                ? '还有未处理的，请再访问一次这个链接'
-                : '全部补完',
+            tip: remaining > 0 ? '还有未处理的，请再访问一次这个链接' : '全部处理完毕',
         });
     } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

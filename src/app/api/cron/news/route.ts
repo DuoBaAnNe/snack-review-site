@@ -19,6 +19,7 @@ export const maxDuration = 60;
 // One intro per title. Parallel calls; each is independent so a single
 // failure only drops that one card's intro.
 import { aiIntro, aiAvailable } from '@/lib/ai-intro';
+import { resolveRealUrl } from '@/lib/resolve-link';
 
 async function aiEnrich(titles: string[]): Promise<(string | null)[] | null> {
     if (!aiAvailable() || titles.length === 0) return null;
@@ -236,8 +237,12 @@ export async function GET(request: Request) {
         chosen.push({ rep, cat: classify(rep.title), sources });
     }
 
-    // 5b. AI-written intros (falls back to the plain format if the call fails)
-    const intros = await aiEnrich(chosen.map((c) => c.rep.title));
+    // 5b. In parallel: AI intros + resolving Google redirect links to the
+    //     real publisher URLs (Google is unreachable from mainland China)
+    const [intros, links] = await Promise.all([
+        aiEnrich(chosen.map((c) => c.rep.title)),
+        Promise.all(chosen.map((c) => resolveRealUrl(c.rep.link, c.rep.title))),
+    ]);
 
     let published = 0;
     const publishedTitles: string[] = [];
@@ -251,7 +256,7 @@ export async function GET(request: Request) {
             ? `${intro}\n\n${srcLine}\n—— 导读由 AI 辅助撰写，点击"阅读原文"查看完整报道`
             : `${srcLine}\n\n—— 本条由系统每日自动采集发布，点击"阅读原文"查看报道`;
 
-        await createNews(`【${cat}】${rep.title}`, content, rep.link);
+        await createNews(`【${cat}】${rep.title}`, content, links[i] || rep.link);
         publishedTitles.push(rep.title);
         published++;
     }
