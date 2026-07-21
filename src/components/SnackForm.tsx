@@ -110,8 +110,12 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
                 body: JSON.stringify(input),
             });
             if (res.ok) {
-                router.push(redirectTo || '/admin');
-                router.refresh();
+                // Full-page nav: client-side router.push silently no-ops on this
+                // site, which left the user stuck on the form after a successful
+                // save and looking like it had failed. A hard redirect also loads
+                // fresh data at the destination, so router.refresh isn't needed.
+                window.location.href = redirectTo || '/admin';
+                return;
             } else {
                 const text = await res.text();
                 let message = `Server error (${res.status})`;
