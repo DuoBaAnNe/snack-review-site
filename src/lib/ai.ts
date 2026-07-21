@@ -1,8 +1,13 @@
 import type { AnalysisResult } from '@/types';
 
-const API_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.deepseek.com';
+const API_BASE = process.env.ANTHROPIC_BASE_URL || 'https://api.deepseek.com/anthropic';
 const API_TOKEN = process.env.ANTHROPIC_AUTH_TOKEN || '';
 const MODEL = process.env.ANTHROPIC_MODEL || 'deepseek-v4-pro';
+
+function messagesUrl(): string {
+    const root = API_BASE.replace(/\/+$/, '');
+    return (root.endsWith('/anthropic') ? root : root + '/anthropic') + '/v1/messages';
+}
 
 const ANALYSIS_PROMPT = `Analyze this image of a snack product's packaging. Extract the following information from any visible text on the package. Return ONLY a valid JSON object with these exact keys. Use empty strings for any information you cannot find:
 
@@ -25,28 +30,35 @@ Rules:
 - Return ONLY the JSON object, no other text before or after`;
 
 export async function analyzeSnackImage(base64Data: string, mimeType: string): Promise<AnalysisResult> {
-    const apiResponse = await fetch(`${API_BASE}/v1/chat/completions`, {
+    // DeepSeek is reached through its Anthropic-compatible gateway, so this
+    // uses the Anthropic Messages format (/v1/messages, image "source" blocks)
+    // -- not OpenAI's /chat/completions + image_url, which 404s here.
+    const apiResponse = await fetch(messagesUrl(), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
+            'x-api-key': API_TOKEN,
+            'anthropic-version': '2023-06-01',
             'Authorization': `Bearer ${API_TOKEN}`,
         },
         body: JSON.stringify({
             model: MODEL,
             max_tokens: 1024,
+            // deepseek-v4-pro is a reasoning model; without this it burns the
+            // whole budget "thinking" and never emits the JSON answer
+            thinking: { type: 'disabled' },
             messages: [{
                 role: 'user',
                 content: [
                     {
-                        type: 'image_url',
-                        image_url: {
-                            url: `data:${mimeType};base64,${base64Data}`,
-                        }
+                        type: 'image',
+                        source: { type: 'base64', media_type: mimeType, data: base64Data },
                     },
-                    { type: 'text', text: ANALYSIS_PROMPT }
-                ]
-            }]
-        })
+                    { type: 'text', text: ANALYSIS_PROMPT },
+                ],
+            }],
+        }),
+        signal: AbortSignal.timeout(60000),
     });
 
     if (!apiResponse.ok) {
@@ -55,7 +67,10 @@ export async function analyzeSnackImage(base64Data: string, mimeType: string): P
     }
 
     const json = await apiResponse.json();
-    const text: string = json.choices?.[0]?.message?.content || '';
+    const block = Array.isArray(json?.content)
+        ? json.content.find((c: { type: string; text?: string }) => c.type === 'text')
+        : null;
+    const text: string = block?.text || '';
 
     let cleaned = text.trim();
     if (cleaned.startsWith('```json')) cleaned = cleaned.slice(7);
