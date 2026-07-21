@@ -61,7 +61,7 @@ export default function SnackDetail({ snack, related }: Props) {
                             <span className="text-xs text-gray-400">/ 10 综合评分</span>
                         </div>
                         <div className="mt-4 space-y-1 text-xs text-gray-400">
-                            {snack.manufacturer_name && <p>制造商: {snack.manufacturer_name}</p>}
+                            {snack.manufacturer_name && <p>品牌持有方: {snack.manufacturer_name}</p>}
                             {snack.manufacturer_address && <p>地址: {snack.manufacturer_address}</p>}
                             {snack.brand_company && <p>品牌方: {snack.brand_company}</p>}
                         </div>
@@ -120,10 +120,13 @@ export default function SnackDetail({ snack, related }: Props) {
                     <h2 className="font-semibold text-gray-800 mb-4">同类零食</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {related.map((r) => (
-                            <Link
+                            // Native anchor (full-page nav): client-side routing
+                            // between two /snacks/[id] pages doesn't repaint on
+                            // this site, so the card looked unclickable.
+                            <a
                                 key={r.id}
                                 href={`/snacks/${r.id}`}
-                                className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-amber-50 transition-colors"
+                                className="flex items-center gap-3 p-3 rounded-lg bg-gray-50 hover:bg-amber-50 transition-colors cursor-pointer"
                             >
                                 {r.images[0] ? (
                                     <img
@@ -138,7 +141,7 @@ export default function SnackDetail({ snack, related }: Props) {
                                     <p className="text-sm font-medium text-gray-800 truncate">{r.product_name}</p>
                                     <p className="text-xs text-gray-400 truncate">{r.brand_name}</p>
                                 </div>
-                            </Link>
+                            </a>
                         ))}
                     </div>
                 </div>

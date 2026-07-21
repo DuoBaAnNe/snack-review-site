@@ -51,15 +51,18 @@ async function main() {
         if (!/duplicate column|already exists/i.test(e.message || '')) throw e;
     }
 
-    const rows = (await db.execute(
-        "SELECT id, data, mime_type FROM snack_images WHERE (cutout IS NULL OR cutout = '') AND data != ''"
-    )).rows;
-    console.log(`Images to process: ${rows.length}`);
+    // Fetch ids only first — pulling every image blob in one query can
+    // exceed what the remote HTTP connection tolerates ("terminated").
+    const ids = (await db.execute(
+        "SELECT id FROM snack_images WHERE (cutout IS NULL OR cutout = '') AND data != ''"
+    )).rows.map((r) => r.id);
+    console.log(`Images to process: ${ids.length}`);
 
     let ok = 0, fail = 0;
-    for (const row of rows) {
-        const id = row.id;
+    for (const id of ids) {
         try {
+            const row = (await db.execute('SELECT data FROM snack_images WHERE id = ?', [id])).rows[0];
+            if (!row || !row.data) { throw new Error('image row disappeared'); }
             // 1. decode (webp/jpeg/png all supported) + downscale, output PNG
             const src = Buffer.from(String(row.data), 'base64');
             const pngBuf = await sharp(src)

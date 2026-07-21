@@ -125,7 +125,12 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
     const provinceMap = useMemo(() => {
         const map = new Map<string, Snack[]>();
         for (const snack of snacks) {
-            const province = detectProvince(snack.manufacturer_address || '');
+            // Province follows the brand holder: its registered address first,
+            // falling back to the company name itself (which usually embeds a
+            // province, e.g. "福建达利...").
+            const province =
+                detectProvince(snack.manufacturer_address || '') ||
+                detectProvince(snack.manufacturer_name || '');
             if (province) {
                 if (!map.has(province)) map.set(province, []);
                 map.get(province)!.push(snack);
