@@ -92,10 +92,10 @@ export default function ImageUploader({ onImagesChange, initialImages }: Props) 
                 const updated = [...entries, ...newEntries];
                 notifyParent(updated);
             } else {
-                setError(data.error || 'Upload failed');
+                setError(data.error || '上传失败，请重试');
             }
         } catch {
-            setError('Upload failed. Check your connection.');
+            setError('上传失败，请检查网络连接');
         }
         setUploading(false);
     }
@@ -131,15 +131,15 @@ export default function ImageUploader({ onImagesChange, initialImages }: Props) 
                     onChange={(e) => e.target.files && uploadFiles(e.target.files)}
                 />
                 {uploading ? (
-                    <p className="text-gray-400">Uploading...</p>
+                    <p className="text-gray-400">上传中…</p>
                 ) : (
                     <>
                         <svg className="w-10 h-10 mx-auto text-gray-300 mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
                                 d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                         </svg>
-                        <p className="text-sm text-gray-500">Drop images here or click to browse</p>
-                        <p className="text-xs text-gray-400 mt-1">JPEG, PNG, WebP · 自动压缩为 WebP</p>
+                        <p className="text-sm text-gray-500">拖入图片，或点击选择</p>
+                        <p className="text-xs text-gray-400 mt-1">支持 JPEG、PNG、WebP · 自动压缩为 WebP</p>
                     </>
                 )}
             </div>
