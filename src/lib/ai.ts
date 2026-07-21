@@ -9,9 +9,9 @@ const ANALYSIS_PROMPT = `Analyze this image of a snack product's packaging. Extr
 {
   "brand_name": "the brand or company name of the snack",
   "product_name": "the specific product name of this snack item",
-  "manufacturer_name": "the name of the company that manufactured this product",
-  "manufacturer_address": "the manufacturer's physical address if shown",
-  "brand_company": "the brand company name if different from manufacturer, otherwise empty string",
+  "manufacturer_name": "the company that OWNS the brand (品牌方 / 品牌持有方 / 委托方 / 商标持有人). If the package separates a brand owner from the factory that produced it, put the BRAND OWNER here, never the factory",
+  "manufacturer_address": "the brand owner's location -- prefer its province and city (e.g. 上海市). If only a factory address is printed, use that",
+  "brand_company": "",
   "ingredients": "the complete ingredients list exactly as printed on the package. Include all items in order"
 }
 
@@ -19,6 +19,8 @@ Rules:
 - Read text in any language visible on the package (Chinese, English, Japanese, Korean, etc.)
 - Preserve the original language of the ingredients list -- do not translate
 - If information spans multiple lines, combine it into a single string
+- IMPORTANT: Chinese packages often show BOTH a brand owner (委托方) and a contract factory (受托方 / 被委托方 / 生产商 / 制造商). manufacturer_name and manufacturer_address must describe the BRAND OWNER (委托方), because we use them to place the snack on a province map by who owns the brand -- not where it was made
+- Leave brand_company as an empty string
 - Do NOT invent or guess information that is not visible on the package
 - Return ONLY the JSON object, no other text before or after`;
 

@@ -165,7 +165,7 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
                         {fieldErrors.product_name && <p className="text-red-400 text-xs mt-1">{fieldErrors.product_name}</p>}
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Brand Holder 品牌持有方</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">品牌持有方公司 Brand Holder <span className="text-gray-400">（品牌所属公司，如 上海融氏）</span></label>
                         <input
                             type="text"
                             value={input.manufacturer_name}
@@ -174,7 +174,7 @@ export default function SnackForm({ mode, initialData, redirectTo }: Props) {
                         />
                     </div>
                     <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Address 品牌持有方地址 <span className="text-gray-400">（决定地图所属省份）</span></label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">公司所在地 省/市 <span className="text-gray-400">（决定地图省份，如 上海）</span></label>
                         <input
                             type="text"
                             value={input.manufacturer_address}

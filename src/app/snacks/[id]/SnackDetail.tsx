@@ -62,8 +62,7 @@ export default function SnackDetail({ snack, related }: Props) {
                         </div>
                         <div className="mt-4 space-y-1 text-xs text-gray-400">
                             {snack.manufacturer_name && <p>品牌持有方: {snack.manufacturer_name}</p>}
-                            {snack.manufacturer_address && <p>地址: {snack.manufacturer_address}</p>}
-                            {snack.brand_company && <p>品牌方: {snack.brand_company}</p>}
+                            {snack.manufacturer_address && <p>所在地: {snack.manufacturer_address}</p>}
                         </div>
                         <p className="text-xs text-gray-400 mt-3">
                             更新于 {snack.updated_at.slice(0, 10)}
