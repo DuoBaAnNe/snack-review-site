@@ -53,8 +53,10 @@ async function main() {
 
     // Fetch ids only first — pulling every image blob in one query can
     // exceed what the remote HTTP connection tolerates ("terminated").
+    // snack_id IS NOT NULL skips orphaned/corrupt rows not attached to any
+    // snack (they can't be decoded and only produce noise every run).
     const ids = (await db.execute(
-        "SELECT id FROM snack_images WHERE (cutout IS NULL OR cutout = '') AND data != ''"
+        "SELECT id FROM snack_images WHERE (cutout IS NULL OR cutout = '') AND data != '' AND snack_id IS NOT NULL"
     )).rows.map((r) => r.id);
     console.log(`Images to process: ${ids.length}`);
 
