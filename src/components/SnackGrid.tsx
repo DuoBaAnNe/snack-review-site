@@ -62,7 +62,7 @@ function pickSize(rnd: () => number): number {
 }
 
 function makeRain(): Drop[] {
-    const count = 22 + Math.floor(Math.random() * 7); // 22–28 drops for density
+    const count = 12 + Math.floor(Math.random() * 4); // 12–15 drops (~10% over the live 11–14)
     return Array.from({ length: count }, () => {
         const size = pickSize(Math.random);
         const giant = size > 300;
