@@ -36,13 +36,20 @@ function ownedBy(state: WarState, faction: string): Territory[] {
     return Object.values(state.territories).filter((t) => t.owner === faction);
 }
 
-/** A like reinforces every territory the faction currently holds, so conquered
- *  land can be defended and the faction can snowball. A faction with no
- *  territories left is eliminated (no-op). */
+/** A like heavily reinforces the faction's home (or its strongest holding if
+ *  home was lost) and lightly tops up every other territory it holds. The
+ *  trickle keeps conquered land defensible without letting a big empire grow
+ *  by 5× its size each like. A faction with no territories is eliminated. */
 export function reinforce(state: WarState, faction: string): void {
     const owned = ownedBy(state, faction);
     if (owned.length === 0) return;
-    for (const t of owned) t.garrison += WAR.REINFORCE_PER_LIKE;
+    const home = state.territories[faction];
+    const primary = home && home.owner === faction
+        ? home
+        : owned.reduce((a, b) => (b.garrison > a.garrison ? b : a));
+    for (const t of owned) {
+        t.garrison += t === primary ? WAR.REINFORCE_PER_LIKE : WAR.REINFORCE_TRICKLE;
+    }
 }
 
 function rand(rng: Rng): number {

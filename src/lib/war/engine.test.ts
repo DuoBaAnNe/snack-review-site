@@ -69,16 +69,16 @@ console.log('reinforce');
     reinforce(s, '上海');
     eq(s.territories['上海'].garrison, WAR.BASE_GARRISON + WAR.REINFORCE_PER_LIKE, 'home reinforced when owned');
 
-    // reinforcement buffs every territory the faction holds
+    // home lost -> strongest holding takes the main reinforcement, others trickle
     const s2 = freshState();
     s2.territories['上海'].owner = '江苏';           // 上海 lost its home
-    s2.territories['浙江'].owner = '上海';           // 上海 holds 浙江 + 江西
+    s2.territories['浙江'].owner = '上海';           // 上海 holds 浙江 (strongest) + 江西
     s2.territories['江西'].owner = '上海';
     s2.territories['浙江'].garrison = 20;
     s2.territories['江西'].garrison = 7;
     reinforce(s2, '上海');
     ok(s2.territories['浙江'].garrison === 20 + WAR.REINFORCE_PER_LIKE
-        && s2.territories['江西'].garrison === 7 + WAR.REINFORCE_PER_LIKE, 'reinforces all held territories');
+        && s2.territories['江西'].garrison === 7 + WAR.REINFORCE_TRICKLE, 'main reinforcement to strongest holding, trickle to others');
 
     // eliminated faction -> no-op
     const s3 = freshState();

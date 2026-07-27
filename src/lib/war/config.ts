@@ -2,7 +2,9 @@
 // Tweak these after playtesting to adjust pacing/difficulty.
 export const WAR = {
     BASE_GARRISON: 10,        // starting garrison of every territory each season
-    REINFORCE_PER_LIKE: 5,    // garrison added to each of the faction's territories per like
+    REINFORCE_PER_LIKE: 5,    // garrison added to the faction's home (or strongest holding) per like
+    REINFORCE_TRICKLE: 1,     // garrison added to each *other* territory held (anti-snowball:
+                              // an empire's total gain grows slowly, not by 5× its size)
     APPLY_STEPS_PER_LIKE: 1,  // how many combat steps one like triggers
     BASE_DEFENSE: 4,          // flat defensive bonus so weak/empty provinces resist a bit
     ATTACK_ADVANTAGE: 1.6,    // must outnumber the defended position by this to attack
