@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { Snack } from '@/types';
 import SnackCard from './SnackCard';
 import { getImageUrl } from '@/lib/image-url';
@@ -33,21 +33,12 @@ const RAIN_BG = [
     'linear-gradient(160deg, #ffe4e6, #fda4af)',
     'linear-gradient(160deg, #cffafe, #67e8f9)',
 ];
-// Falling drops are generated per snack from its id, so every snack has its
-// own unique rain (count, positions, sizes, speeds) that stays stable
-// between hovers. Positive delays stagger the drops so each one enters
-// from above the card edge instead of popping in mid-air.
-function seededRand(seed: number) {
-    let s = seed | 0;
-    return function () {
-        s = (s + 0x6D2B79F5) | 0;
-        let t = Math.imul(s ^ (s >>> 15), 1 | s);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
-
-interface Drop { left: string; size: number; dur: number; timing: string; delay: number; spin: number }
+// The rain is rebuilt with real randomness on every hover (see useMemo in the
+// component), so no two hovers look alike. Each drop enters from above the top
+// edge, is staggered in time, and gets its own constant speed from a wide
+// range — giving a continuous stream instead of a synchronized "batch, gap,
+// batch".
+interface Drop { left: string; size: number; dur: number; delay: number; spin: number }
 
 // Size tiers with probabilities — a rare "blocks the lens" giant, down to
 // tiny crumbs. Weights sum to 1.
@@ -70,43 +61,26 @@ function pickSize(rnd: () => number): number {
     return 60;
 }
 
-const FAST_SEC = 3; // first 3 seconds fall at 2× speed to fill the card fast
-
-function dropsFor(id: number): Drop[] {
-    const rnd = seededRand(id * 7919 + 13);
-    const count = 11 + Math.floor(rnd() * 4); // 11–14 drops
+function makeRain(): Drop[] {
+    const count = 22 + Math.floor(Math.random() * 7); // 22–28 drops for density
     return Array.from({ length: count }, () => {
-        const size = pickSize(rnd);
+        const size = pickSize(Math.random);
         const giant = size > 300;
-        const D = size + 500; // total travel distance — must match --fall below
-        // Normal (calm) fall speed in px/s; giants drift slower. The first
-        // FAST_SEC seconds run at 2× this, so the card fills quickly and then
-        // everything settles into a slow drift.
-        const v = giant ? 40 + rnd() * 30 : 45 + rnd() * 35;
-        const distFast = 2 * v * FAST_SEC;
-        let dur: number;
-        let timing: string;
-        if (distFast >= D) {
-            // The whole drop lands within the fast phase — constant 2× speed.
-            dur = D / (2 * v);
-            timing = 'linear';
-        } else {
-            const timeSlow = (D - distFast) / v;
-            dur = FAST_SEC + timeSlow;
-            // Piecewise-linear easing: cover the fast-phase distance by the 3s
-            // mark (2× speed), then normal speed to the bottom.
-            timing = `linear(0, ${(distFast / D).toFixed(4)} ${((FAST_SEC / dur) * 100).toFixed(2)}%, 1)`;
-        }
+        // Constant speed per drop, but a WIDE range so the drops never fall as
+        // one synchronized wall; giants are the slow, heavy ones.
+        const dur = giant ? 7 + Math.random() * 5 : 3.2 + Math.random() * 6.8;
         return {
             // Giants hug the left half so most of them stays inside the card
-            left: `${Math.round(rnd() * (giant ? 30 : 92))}%`,
+            left: `${Math.round(Math.random() * (giant ? 30 : 92))}%`,
             size,
             dur,
-            timing,
-            // Tiny stagger only — drops slide in from above almost at once.
-            delay: rnd() * 0.5,
+            // Staggered entry from above the top edge, spread wide enough that
+            // as the first drops leave the bottom, later ones are still coming
+            // in — a continuous stream, no batch-then-gap. Never negative, so
+            // nothing ever pops in mid-air.
+            delay: Math.random() * 2.2,
             // Half spin clockwise, half counter-clockwise; giants barely tumble
-            spin: (rnd() < 0.5 ? -1 : 1) * Math.round(giant ? 30 + rnd() * 50 : 120 + rnd() * 260),
+            spin: (Math.random() < 0.5 ? -1 : 1) * Math.round(giant ? 30 + Math.random() * 50 : 120 + Math.random() * 260),
         };
     });
 }
@@ -115,6 +89,10 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
     const wrapRef = useRef<HTMLDivElement>(null);
     const [width, setWidth] = useState(0);
     const [hoverId, setHoverId] = useState<number | null>(null);
+    // Fresh random rain per hover — recomputed only when the hovered card
+    // changes, so it stays stable while you hover one card but differs every
+    // time you hover (in/out counts as a change since hoverId passes null).
+    const rain = useMemo(() => (hoverId == null ? [] : makeRain()), [hoverId]);
     const [selByRow, setSelByRow] = useState<Record<number, number>>({}); // per-row sticky focus (snack id) after a click
     const SLIDE_STEP = 18; // how far the row slides per card when the focus jumps (px)
 
@@ -239,7 +217,7 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                                                     className="absolute inset-0"
                                                     style={{ background: RAIN_BG[snack.id % RAIN_BG.length] }}
                                                 >
-                                                    {dropsFor(snack.id).map((d, i) => (
+                                                    {rain.map((d, i) => (
                                                         cover.has_cutout ? (
                                                             // Real background-removed PNG
                                                             <img
@@ -258,7 +236,7 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                                                                     filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.25))',
                                                                     animationName: 'snack-rain',
                                                                     animationDuration: `${d.dur}s`,
-                                                                    animationTimingFunction: d.timing,
+                                                                    animationTimingFunction: 'linear',
                                                                     animationIterationCount: 'infinite',
                                                                     animationDelay: `${d.delay}s`,
                                                                     '--spin': `${d.spin}deg`,
@@ -286,7 +264,7 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                                                                     boxShadow: '0 4px 10px rgba(0,0,0,0.18)',
                                                                     animationName: 'snack-rain',
                                                                     animationDuration: `${d.dur}s`,
-                                                                    animationTimingFunction: d.timing,
+                                                                    animationTimingFunction: 'linear',
                                                                     animationIterationCount: 'infinite',
                                                                     animationDelay: `${d.delay}s`,
                                                                     '--spin': `${d.spin}deg`,
