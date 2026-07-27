@@ -47,7 +47,7 @@ function seededRand(seed: number) {
     };
 }
 
-interface Drop { left: string; size: number; dur: number; delay: number; spin: number }
+interface Drop { left: string; size: number; dur: number; timing: string; delay: number; spin: number }
 
 // Size tiers with probabilities — a rare "blocks the lens" giant, down to
 // tiny crumbs. Weights sum to 1.
@@ -70,22 +70,41 @@ function pickSize(rnd: () => number): number {
     return 60;
 }
 
+const FAST_SEC = 3; // first 3 seconds fall at 2× speed to fill the card fast
+
 function dropsFor(id: number): Drop[] {
     const rnd = seededRand(id * 7919 + 13);
     const count = 11 + Math.floor(rnd() * 4); // 11–14 drops
     return Array.from({ length: count }, () => {
         const size = pickSize(rnd);
         const giant = size > 300;
+        const D = size + 500; // total travel distance — must match --fall below
+        // Normal (calm) fall speed in px/s; giants drift slower. The first
+        // FAST_SEC seconds run at 2× this, so the card fills quickly and then
+        // everything settles into a slow drift.
+        const v = giant ? 40 + rnd() * 30 : 45 + rnd() * 35;
+        const distFast = 2 * v * FAST_SEC;
+        let dur: number;
+        let timing: string;
+        if (distFast >= D) {
+            // The whole drop lands within the fast phase — constant 2× speed.
+            dur = D / (2 * v);
+            timing = 'linear';
+        } else {
+            const timeSlow = (D - distFast) / v;
+            dur = FAST_SEC + timeSlow;
+            // Piecewise-linear easing: cover the fast-phase distance by the 3s
+            // mark (2× speed), then normal speed to the bottom.
+            timing = `linear(0, ${(distFast / D).toFixed(4)} ${((FAST_SEC / dur) * 100).toFixed(2)}%, 1)`;
+        }
         return {
             // Giants hug the left half so most of them stays inside the card
             left: `${Math.round(rnd() * (giant ? 30 : 92))}%`,
             size,
-            // Slow, drifting fall (still with clear speed variety); giants
-            // are the slowest and heaviest.
-            dur: giant ? 9 + rnd() * 4 : 5 + rnd() * 6,
-            // Tiny stagger only — drops slide in from above almost at once so
-            // the card fills quickly instead of trickling in over seconds.
-            delay: rnd() * 0.8,
+            dur,
+            timing,
+            // Tiny stagger only — drops slide in from above almost at once.
+            delay: rnd() * 0.5,
             // Half spin clockwise, half counter-clockwise; giants barely tumble
             spin: (rnd() < 0.5 ? -1 : 1) * Math.round(giant ? 30 + rnd() * 50 : 120 + rnd() * 260),
         };
@@ -237,7 +256,10 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                                                                     width: d.size,
                                                                     height: d.size,
                                                                     filter: 'drop-shadow(0 4px 6px rgba(0,0,0,0.25))',
-                                                                    animation: `snack-rain ${d.dur}s linear infinite`,
+                                                                    animationName: 'snack-rain',
+                                                                    animationDuration: `${d.dur}s`,
+                                                                    animationTimingFunction: d.timing,
+                                                                    animationIterationCount: 'infinite',
                                                                     animationDelay: `${d.delay}s`,
                                                                     '--spin': `${d.spin}deg`,
                                                                     '--fall': `${d.size + 500}px`,
@@ -262,7 +284,10 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                                                                     backgroundPosition: 'center 42%',
                                                                     border: '2px solid rgba(255,255,255,0.9)',
                                                                     boxShadow: '0 4px 10px rgba(0,0,0,0.18)',
-                                                                    animation: `snack-rain ${d.dur}s linear infinite`,
+                                                                    animationName: 'snack-rain',
+                                                                    animationDuration: `${d.dur}s`,
+                                                                    animationTimingFunction: d.timing,
+                                                                    animationIterationCount: 'infinite',
                                                                     animationDelay: `${d.delay}s`,
                                                                     '--spin': `${d.spin}deg`,
                                                                     '--fall': `${d.size + 500}px`,
