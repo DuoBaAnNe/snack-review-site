@@ -80,10 +80,12 @@ function dropsFor(id: number): Drop[] {
             // Giants hug the left half so most of them stays inside the card
             left: `${Math.round(rnd() * (giant ? 30 : 92))}%`,
             size,
-            // Giants fall slow and heavy; everyone else spans a wide
-            // fast-to-slow range so speed differences read clearly
-            dur: giant ? 6.5 + rnd() * 3 : 1.6 + rnd() * 7.4,
-            delay: rnd() * 5,
+            // Slow, drifting fall (still with clear speed variety); giants
+            // are the slowest and heaviest.
+            dur: giant ? 9 + rnd() * 4 : 5 + rnd() * 6,
+            // Tiny stagger only — drops slide in from above almost at once so
+            // the card fills quickly instead of trickling in over seconds.
+            delay: rnd() * 0.8,
             // Half spin clockwise, half counter-clockwise; giants barely tumble
             spin: (rnd() < 0.5 ? -1 : 1) * Math.round(giant ? 30 + rnd() * 50 : 120 + rnd() * 260),
         };
