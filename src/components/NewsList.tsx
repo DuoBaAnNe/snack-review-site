@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { NewsItem } from '@/types';
 
 // Category → badge color, cover emoji, and a cover gradient (two stops).
@@ -32,6 +32,7 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
     const [expanded, setExpanded] = useState<Set<number>>(new Set());
     const [filter, setFilter] = useState<string | null>(null);
     const [showAll, setShowAll] = useState(false);
+    const newsListRef = useRef<HTMLDivElement>(null);
 
     if (news.length === 0) {
         return (
@@ -52,13 +53,24 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
     function toggle(id: number) {
         setExpanded((prev) => {
             const next = new Set(prev);
-            next.has(id) ? next.delete(id) : next.add(id);
+            if (next.has(id)) {
+                next.delete(id);
+            } else {
+                next.add(id);
+            }
             return next;
         });
     }
 
+    function collapseNews() {
+        setShowAll(false);
+        requestAnimationFrame(() => {
+            newsListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        });
+    }
+
     return (
-        <div>
+        <div ref={newsListRef}>
             {/* Category filters */}
             {presentCats.length > 1 && (
                 <div className="flex flex-wrap items-center gap-2 mb-5">
@@ -146,13 +158,25 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
                 })}
             </div>
 
-            {hasMore && (
+            {showAll && hasMore && (
+                <div className="fixed bottom-5 right-5 z-30 md:sticky md:bottom-6 md:float-right md:mt-6 md:ml-auto md:w-fit">
+                    <button
+                        onClick={collapseNews}
+                        aria-label="收起资讯列表"
+                        className="rounded-full bg-gray-900 px-5 py-2 text-sm text-white shadow-lg transition-colors hover:bg-gray-700"
+                    >
+                        收起资讯
+                    </button>
+                </div>
+            )}
+
+            {hasMore && !showAll && (
                 <div className="text-center mt-6">
                     <button
-                        onClick={() => setShowAll((v) => !v)}
+                        onClick={() => setShowAll(true)}
                         className="px-5 py-2 rounded-full border border-gray-200 text-sm text-gray-600 hover:border-orange-300 hover:text-orange-500 transition-colors"
                     >
-                        {showAll ? '收起' : `查看更多资讯（共 ${matched.length} 条）`}
+                        {`查看更多资讯（共 ${matched.length} 条）`}
                     </button>
                 </div>
             )}
