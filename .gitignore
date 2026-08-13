@@ -49,3 +49,4 @@ database/snacks.db-*
 public/uploads/*
 
 .vercel
+.worktrees/
