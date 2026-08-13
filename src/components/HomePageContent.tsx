@@ -141,19 +141,6 @@ export default function HomePageContent({ snacks, news }: Props) {
                     </div>
                 </section>
 
-                {/* Battle game entry */}
-                <section className="max-w-[1400px] mx-auto px-3 md:px-6">
-                    <a href="/battle" className="block rounded-2xl p-5 bg-gradient-to-r from-amber-400 to-orange-500 text-white shadow-sm hover:opacity-95 transition-opacity">
-                        <div className="flex items-center justify-between gap-3">
-                            <div className="min-w-0">
-                                <p className="text-lg font-bold">🗺️ 零食省份争霸战</p>
-                                <p className="text-sm text-white/90 mt-0.5">给你支持的省份零食点赞，助它的军队攻城略地。每周一季！</p>
-                            </div>
-                            <span className="text-2xl shrink-0">⚔️ →</span>
-                        </div>
-                    </a>
-                </section>
-
                 {/* News */}
                 <section id="sec-news" className="scroll-mt-16 max-w-[1400px] mx-auto px-3 md:px-6">
                     <SectionTitle icon="📰" title="食品资讯" hint="每日自动更新" />
