@@ -64,7 +64,10 @@ export default function HomePageContent({ snacks, news }: Props) {
         document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, []);
 
-    const filtered = activeCategory ? snacks.filter((s) => s.category === activeCategory) : snacks;
+    const filtered = useMemo(
+        () => activeCategory ? snacks.filter((snack) => snack.category === activeCategory) : snacks,
+        [activeCategory, snacks],
+    );
 
     const ingredientsData = useMemo(() => {
         const map = new Map<string, IngredientEntry>();

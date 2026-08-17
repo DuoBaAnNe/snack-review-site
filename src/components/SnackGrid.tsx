@@ -4,9 +4,9 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { Snack } from '@/types';
 import SnackCard from './SnackCard';
 import { getImageUrl } from '@/lib/image-url';
+import { paginateSnackItems, SNACKS_PER_ROW } from '@/lib/snack-pagination';
 
 const ANIM = 260;
-const PER_ROW = 5;
 
 function scoreOf(s: Snack) {
     return (s.rating_taste_health + s.rating_ingredients_health + s.rating_packaging_portability + s.rating_use_case + s.rating_value) / 5;
@@ -95,6 +95,11 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
     const rain = useMemo(() => (hoverId == null ? [] : makeRain()), [hoverId]);
     const [selByRow, setSelByRow] = useState<Record<number, number>>({}); // per-row sticky focus (snack id) after a click
     const SLIDE_STEP = 18; // how far the row slides per card when the focus jumps (px)
+    const [page, setPage] = useState(1);
+    const { pageItems, currentPage, totalPages } = useMemo(
+        () => paginateSnackItems(snacks, page),
+        [snacks, page],
+    );
 
     // Detail popup
     const [active, setActive] = useState<Snack | null>(null);
@@ -111,6 +116,14 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
         return () => ro.disconnect();
     }, []);
 
+    useEffect(() => {
+        // Pagination state is intentionally reset when the category's snack list changes.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setPage(1);
+        setHoverId(null);
+        setSelByRow({});
+    }, [snacks]);
+
     const openCard = useCallback((snack: Snack) => {
         if (unmountTimer.current) { clearTimeout(unmountTimer.current); unmountTimer.current = null; }
         setActive(snack);
@@ -124,6 +137,19 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
         if (unmountTimer.current) clearTimeout(unmountTimer.current);
         unmountTimer.current = setTimeout(() => setActive(null), ANIM);
     }, []);
+
+    const goToPage = useCallback((requestedPage: number) => {
+        const nextPage = Math.min(totalPages, Math.max(1, requestedPage));
+        if (nextPage === currentPage) return;
+
+        setPage(nextPage);
+        setHoverId(null);
+        setSelByRow({});
+        document.getElementById('sec-snacks')?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'start',
+        });
+    }, [currentPage, totalPages]);
 
     useEffect(() => {
         if (!active) return;
@@ -141,8 +167,8 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
         );
     }
 
-    const rows = chunk(snacks, PER_ROW);
-    const slot = width > 0 ? width / PER_ROW : 0;
+    const rows = chunk(pageItems, SNACKS_PER_ROW);
+    const slot = width > 0 ? width / SNACKS_PER_ROW : 0;
     const CARD = Math.min(slot * 1.6, 432);    // +20% again — heavier overlap, bigger cards
     const peakScale = 1.1;
     // rowH fits the peak card exactly; the gap-8 between rows keeps peaks apart,
@@ -292,6 +318,41 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                     );
                 })}
             </div>
+
+            {totalPages > 1 && (
+                <nav aria-label="零食分页" className="mt-8 flex flex-wrap items-center justify-center gap-2">
+                    <button
+                        type="button"
+                        onClick={() => goToPage(currentPage - 1)}
+                        disabled={currentPage === 1}
+                        className="rounded-full border border-gray-300 px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        上一页
+                    </button>
+                    {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNumber) => (
+                        <button
+                            key={pageNumber}
+                            type="button"
+                            onClick={() => goToPage(pageNumber)}
+                            aria-current={pageNumber === currentPage ? 'page' : undefined}
+                            aria-label={'第 ' + pageNumber + ' 页'}
+                            className={pageNumber === currentPage
+                                ? 'h-10 min-w-10 rounded-full bg-gray-900 px-3 text-sm font-black text-white'
+                                : 'h-10 min-w-10 rounded-full border border-gray-300 px-3 text-sm font-bold text-gray-700 transition hover:bg-gray-100'}
+                        >
+                            {pageNumber}
+                        </button>
+                    ))}
+                    <button
+                        type="button"
+                        onClick={() => goToPage(currentPage + 1)}
+                        disabled={currentPage === totalPages}
+                        className="rounded-full border border-gray-300 px-4 py-2 text-sm font-bold text-gray-700 transition hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        下一页
+                    </button>
+                </nav>
+            )}
 
             {/* Detail card — opens on click; fades + scales */}
             {active && (
