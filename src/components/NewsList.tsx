@@ -28,6 +28,11 @@ const MAX_ROWS = 6;
 const COLS = 3;               // lg grid columns
 const MAX_SHOWN = MAX_ROWS * COLS; // at most 6 rows
 
+export function scrollToNewsSection(listElement: HTMLElement | null) {
+    const scrollTarget = listElement?.closest<HTMLElement>('#sec-news') ?? listElement;
+    scrollTarget?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
 export default function NewsList({ news }: { news: NewsItem[] }) {
     const [expanded, setExpanded] = useState<Set<number>>(new Set());
     const [filter, setFilter] = useState<string | null>(null);
@@ -65,7 +70,7 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
     function collapseNews() {
         setShowAll(false);
         requestAnimationFrame(() => {
-            newsListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            scrollToNewsSection(newsListRef.current);
         });
     }
 

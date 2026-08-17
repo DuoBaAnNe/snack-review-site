@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:pagination": "npx --yes tsx@4.23.12 --test src/lib/snack-pagination.test.ts src/components/SnackGrid.pagination.test.ts src/components/NewsList.collapse.test.ts"
   },
   "dependencies": {
     "@libsql/client": "^0.17.3",

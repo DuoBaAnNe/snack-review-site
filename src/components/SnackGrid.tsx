@@ -85,8 +85,17 @@ function makeRain(): Drop[] {
     });
 }
 
+export function commitSnackPageChange(
+    focusTarget: Pick<HTMLElement, 'focus'> | null,
+    scrollTarget: Pick<HTMLElement, 'scrollIntoView'> | null,
+) {
+    scrollTarget?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    focusTarget?.focus({ preventScroll: true });
+}
+
 export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmin?: boolean }) {
     const wrapRef = useRef<HTMLDivElement>(null);
+    const pendingPageChangeRef = useRef(false);
     const [width, setWidth] = useState(0);
     const [hoverId, setHoverId] = useState<number | null>(null);
     // Fresh random rain per hover — recomputed only when the hovered card
@@ -142,14 +151,21 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
         const nextPage = Math.min(totalPages, Math.max(1, requestedPage));
         if (nextPage === currentPage) return;
 
+        pendingPageChangeRef.current = true;
         setPage(nextPage);
         setHoverId(null);
         setSelByRow({});
-        document.getElementById('sec-snacks')?.scrollIntoView({
-            behavior: 'smooth',
-            block: 'start',
-        });
     }, [currentPage, totalPages]);
+
+    useEffect(() => {
+        if (!pendingPageChangeRef.current) return;
+
+        pendingPageChangeRef.current = false;
+        commitSnackPageChange(
+            wrapRef.current,
+            document.getElementById('sec-snacks'),
+        );
+    }, [currentPage]);
 
     useEffect(() => {
         if (!active) return;
@@ -178,7 +194,12 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
     return (
         <>
             {/* Full content width; overflow visible so scaled cards are never clipped */}
-            <div ref={wrapRef} className="w-full flex flex-col gap-8">
+            <div
+                ref={wrapRef}
+                tabIndex={-1}
+                aria-label={`第 ${currentPage} 页零食列表，共 ${totalPages} 页`}
+                className="w-full flex flex-col gap-8 outline-none"
+            >
                 {width > 0 && rows.map((row, r) => {
                     const n = row.length;
                     const rowW = n * slot;
