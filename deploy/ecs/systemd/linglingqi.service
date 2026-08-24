@@ -1,0 +1,25 @@
+[Unit]
+Description=linglingqi.fun Next.js service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=linglingqi
+Group=linglingqi
+WorkingDirectory=/opt/linglingqi/current
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/linglingqi/linglingqi.env
+ExecStart=/usr/bin/npm run start -- --hostname 127.0.0.1 --port 3000
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/opt/linglingqi
+
+[Install]
+WantedBy=multi-user.target
