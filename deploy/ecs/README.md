@@ -87,7 +87,10 @@ sudo bash deploy/ecs/install-certificate.sh ~/fullchain.pem ~/privkey.pem
 rm -f ~/fullchain.pem ~/privkey.pem
 ```
 
-The installer validates the complete Nginx configuration before reloading it.
+The installer validates the complete Nginx configuration, then reloads Nginx
+when it is already active or starts it on a fresh host. Any validation or
+activation failure restores the prior certificate files before returning an
+error.
 
 ## 7. Deploy a verified Git SHA
 
@@ -101,6 +104,9 @@ sudo bash deploy/ecs/deploy.sh '<verified-full-git-sha>'
 The script accepts an abbreviated SHA but resolves it to the full commit,
 requires it to be reachable from `origin/main`, tests and builds before the
 atomic switch, and rolls back a failed activation when a prior release exists.
+It holds a root-owned deployment lock throughout validation, build, activation,
+health verification, and rollback; a concurrent invocation waits at most 30
+seconds before failing without reading stale release state.
 
 ## 8. Health and pre-DNS checks
 

@@ -6,6 +6,14 @@ function read(path: string) {
     return readFileSync(path, 'utf8');
 }
 
+function assertBefore(content: string, first: string, second: string) {
+    const firstIndex = content.indexOf(first);
+    const secondIndex = content.indexOf(second);
+    assert.notEqual(firstIndex, -1, `missing first marker: ${first}`);
+    assert.notEqual(secondIndex, -1, `missing second marker: ${second}`);
+    assert.ok(firstIndex < secondIndex, `${first} must precede ${second}`);
+}
+
 test('systemd runs Next.js as the dedicated user on loopback', () => {
     const service = read('deploy/ecs/systemd/linglingqi.service');
     assert.match(service, /^User=linglingqi$/m);
@@ -37,6 +45,12 @@ test('bootstrap provisions Node 24, swap, nginx, user, and directories', () => {
     assert.match(bootstrap, /\/opt\/linglingqi\/releases/);
 });
 
+test('bootstrap rejects symlinked and non-regular swap targets before writing', () => {
+    const bootstrap = read('deploy/ecs/bootstrap-alibaba-linux.sh');
+    assertBefore(bootstrap, '[[ -L /swapfile ]]', 'dd if=/dev/zero of=/swapfile');
+    assertBefore(bootstrap, '[[ -e /swapfile && ! -f /swapfile ]]', 'dd if=/dev/zero of=/swapfile');
+});
+
 test('deploy script uses versioned releases, an atomic symlink, and rollback', () => {
     const deploy = read('deploy/ecs/deploy.sh');
     assert.match(deploy, /repository\.git/);
@@ -45,6 +59,51 @@ test('deploy script uses versioned releases, an atomic symlink, and rollback', (
     assert.match(deploy, /systemctl restart linglingqi\.service/);
     assert.match(deploy, /\/api\/health/);
     assert.match(deploy, /previous_target/);
+});
+
+test('deploy serializes validation, build, activation, health, and rollback', () => {
+    const deploy = read('deploy/ecs/deploy.sh');
+    assert.match(deploy, /deployment_lock_file="\/run\/lock\/linglingqi\/deploy\.lock"/);
+    assert.match(deploy, /chown root:root "\$\{deployment_lock_file\}"/);
+    assert.match(deploy, /flock --exclusive --timeout 30 "\$\{deployment_lock_fd\}"/);
+    assertBefore(deploy, 'flock --exclusive --timeout 30', 'if [[ ! -f "${environment_file}"');
+    assertBefore(deploy, 'flock --exclusive --timeout 30', 'git clone --bare');
+});
+
+test('deploy rejects an untrusted bare repository before fetching', () => {
+    const deploy = read('deploy/ecs/deploy.sh');
+    assert.match(deploy, /\[\[ -L "\$\{repository_dir\}" \]\]/);
+    assert.match(deploy, /remote get-url origin/);
+    assert.match(deploy, /"\$\{actual_repository_url\}" != "\$\{repository_url\}"/);
+    assertBefore(deploy, 'remote get-url origin', 'fetch --force --prune origin');
+});
+
+test('certificate installer reloads an active Nginx service', () => {
+    const certificate = read('deploy/ecs/install-certificate.sh');
+    assert.match(certificate, /if systemctl is-active --quiet nginx; then\s+systemctl reload nginx/s);
+});
+
+test('certificate installer starts an inactive Nginx service', () => {
+    const certificate = read('deploy/ecs/install-certificate.sh');
+    assert.match(certificate, /systemctl reload nginx\s+else\s+systemctl start nginx\s+fi/s);
+});
+
+test('certificate installer restores live files on failure or interruption', () => {
+    const certificate = read('deploy/ecs/install-certificate.sh');
+    assert.match(certificate, /trap certificate_exit EXIT/);
+    assert.match(certificate, /trap 'exit 130' INT/);
+    assert.match(certificate, /trap 'exit 143' TERM/);
+    assert.match(certificate, /restore_previous_certificate/);
+    assertBefore(certificate, 'trap certificate_exit EXIT', 'live_files_replaced=true');
+    assertBefore(certificate, 'systemctl reload nginx', 'activation_complete=true');
+    assertBefore(certificate, 'systemctl start nginx', 'activation_complete=true');
+    assertBefore(certificate, 'activation_complete=true', 'trap - EXIT INT TERM');
+});
+
+test('certificate installer preserves backups when rollback itself fails', () => {
+    const certificate = read('deploy/ecs/install-certificate.sh');
+    assert.match(certificate, /if \[\[ "\$\{preserve_backups\}" != "true" \]\]; then/);
+    assert.match(certificate, /if ! restore_previous_certificate; then[\s\S]*preserve_backups=true/);
 });
 
 test('environment example names secrets but contains no values', () => {

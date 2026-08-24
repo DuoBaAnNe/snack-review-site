@@ -25,7 +25,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-dnf install -y curl git nginx tar gzip
+dnf install -y curl git nginx tar gzip util-linux
 
 nodesource_script="$(mktemp /tmp/nodesource-setup.XXXXXX)"
 curl --fail --silent --show-error --location \
@@ -52,6 +52,14 @@ install -d -o root -g root -m 0755 /opt/linglingqi/releases
 install -d -o root -g linglingqi -m 0750 /etc/linglingqi
 install -d -o root -g root -m 0700 /etc/nginx/ssl/linglingqi
 
+if [[ -L /swapfile ]]; then
+    echo "Refusing to use a symlinked /swapfile target." >&2
+    exit 1
+fi
+if [[ -e /swapfile && ! -f /swapfile ]]; then
+    echo "Refusing to use a non-regular /swapfile target." >&2
+    exit 1
+fi
 if [[ ! -e /swapfile ]]; then
     swap_created=true
     dd if=/dev/zero of=/swapfile bs=1M count=2048 status=progress

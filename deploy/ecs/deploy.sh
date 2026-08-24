@@ -24,6 +24,9 @@ next_link="/opt/linglingqi/current.next"
 rollback_link="/opt/linglingqi/current.rollback"
 environment_file="/etc/linglingqi/linglingqi.env"
 health_url="http://127.0.0.1:3000/api/health"
+deployment_lock_dir="/run/lock/linglingqi"
+deployment_lock_file="/run/lock/linglingqi/deploy.lock"
+deployment_lock_fd=""
 environment_temp=""
 next_link_created=false
 rollback_link_created=false
@@ -40,6 +43,28 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
+
+if [[ -L "${deployment_lock_dir}" ]] || \
+    [[ -e "${deployment_lock_dir}" && ! -d "${deployment_lock_dir}" ]]; then
+    echo "Refusing to use an unexpected deployment lock directory." >&2
+    exit 1
+fi
+install -d -o root -g root -m 0700 "${deployment_lock_dir}"
+if [[ -L "${deployment_lock_file}" ]] || \
+    [[ -e "${deployment_lock_file}" && ! -f "${deployment_lock_file}" ]]; then
+    echo "Refusing to use an unexpected deployment lock file." >&2
+    exit 1
+fi
+if [[ ! -e "${deployment_lock_file}" ]]; then
+    touch "${deployment_lock_file}"
+fi
+chown root:root "${deployment_lock_file}"
+chmod 0600 "${deployment_lock_file}"
+exec {deployment_lock_fd}<>"${deployment_lock_file}"
+if ! flock --exclusive --timeout 30 "${deployment_lock_fd}"; then
+    echo "Another deployment still holds the lock after 30 seconds." >&2
+    exit 1
+fi
 
 if [[ ! -f "${environment_file}" || -L "${environment_file}" ]]; then
     echo "Install a regular environment file at ${environment_file} first." >&2
@@ -117,11 +142,22 @@ poll_health() {
 install -d -o root -g root -m 0755 /opt/linglingqi
 install -d -o root -g root -m 0755 "${releases_dir}"
 
-if [[ ! -e "${repository_dir}" ]]; then
+if [[ -L "${repository_dir}" ]]; then
+    echo "Refusing to use a symlinked repository target ${repository_dir}." >&2
+    exit 1
+elif [[ ! -e "${repository_dir}" ]]; then
     git clone --bare "${repository_url}" "${repository_dir}"
 elif [[ ! -d "${repository_dir}" ]] || \
     [[ "$(git -C "${repository_dir}" rev-parse --is-bare-repository 2>/dev/null)" != "true" ]]; then
     echo "Refusing to replace unexpected repository target ${repository_dir}." >&2
+    exit 1
+fi
+if ! actual_repository_url="$(git -C "${repository_dir}" remote get-url origin 2>/dev/null)"; then
+    echo "The bare repository does not have a readable origin URL." >&2
+    exit 1
+fi
+if [[ "${actual_repository_url}" != "${repository_url}" ]]; then
+    echo "The bare repository origin does not match the official repository URL." >&2
     exit 1
 fi
 git -C "${repository_dir}" fetch --force --prune origin \
