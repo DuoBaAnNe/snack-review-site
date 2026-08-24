@@ -16,10 +16,59 @@ fi
 
 certificate_source="$1"
 private_key_source="$2"
-destination_dir="${LINGLINGQI_CERTIFICATE_DESTINATION_DIR:-/etc/nginx/ssl/linglingqi}"
-if [[ "${destination_dir}" != /* ]] || [[ -L "${destination_dir}" ]] || \
+destination_dir="/etc/nginx/ssl/linglingqi"
+certificate_test_mode="${LINGLINGQI_CERTIFICATE_TEST_MODE:-0}"
+if [[ "${certificate_test_mode}" == "1" ]]; then
+    test_root="${LINGLINGQI_CERTIFICATE_TEST_ROOT:-}"
+    test_destination="${LINGLINGQI_CERTIFICATE_DESTINATION_DIR:-}"
+    unsafe_test_destination=false
+
+    if [[ -z "${test_root}" || -z "${test_destination}" || \
+        "${test_root}" != /* || "${test_root}" == "/" || \
+        "${test_destination}" != /* || "${test_destination}" == "/" || \
+        -L "${test_root}" || ! -d "${test_root}" || ! -O "${test_root}" || \
+        "${test_root}" =~ (^|/)\.\.?(/|$) || \
+        "${test_destination}" =~ (^|/)\.\.?(/|$) ]]; then
+        unsafe_test_destination=true
+    else
+        canonical_test_root="$(realpath -e -- "${test_root}")"
+        canonical_test_destination="$(realpath -m -- "${test_destination}")"
+        if [[ "${test_root}" != "${canonical_test_root}" || \
+            "${canonical_test_destination}" != "${canonical_test_root}"/* ]]; then
+            unsafe_test_destination=true
+        else
+            relative_destination="${test_destination#"${canonical_test_root}"/}"
+            destination_ancestor="${canonical_test_root}"
+            IFS='/' read -r -a destination_parts <<<"${relative_destination}"
+            for destination_part in "${destination_parts[@]}"; do
+                destination_ancestor="${destination_ancestor}/${destination_part}"
+                if [[ -L "${destination_ancestor}" ]] || \
+                    [[ -e "${destination_ancestor}" && ! -d "${destination_ancestor}" ]]; then
+                    unsafe_test_destination=true
+                    break
+                fi
+            done
+        fi
+    fi
+
+    if [[ "${unsafe_test_destination}" == "true" ]]; then
+        echo "Unsafe certificate test destination." >&2
+        exit 1
+    fi
+    destination_dir="${canonical_test_destination}"
+    export LINGLINGQI_CERTIFICATE_TEST_PARENT_PID="$$"
+elif [[ "${certificate_test_mode}" != "0" ]] || \
+    [[ -v LINGLINGQI_CERTIFICATE_DESTINATION_DIR ]] || \
+    [[ -v LINGLINGQI_CERTIFICATE_TEST_ROOT ]]; then
+    echo "Certificate destination override requires explicit test mode." >&2
+    exit 1
+else
+    unset LINGLINGQI_CERTIFICATE_TEST_PARENT_PID
+fi
+
+if [[ -L "${destination_dir}" ]] || \
     [[ -e "${destination_dir}" && ! -d "${destination_dir}" ]]; then
-    echo "Certificate destination must be an absolute, non-symlinked directory." >&2
+    echo "Certificate destination must be a non-symlinked directory." >&2
     exit 1
 fi
 certificate_path="${destination_dir}/fullchain.pem"
@@ -43,21 +92,27 @@ activation_command_status=125
 activation_interrupted_status=0
 
 cleanup() {
+    local cleanup_ok=true
     for temporary_path in \
         "${certificate_stage}" "${private_key_stage}" \
         "${certificate_restore_stage}" "${private_key_restore_stage}" \
         "${activation_status_file}"; do
         if [[ -n "${temporary_path}" && -f "${temporary_path}" ]]; then
-            rm -f -- "${temporary_path}"
+            if ! rm -f -- "${temporary_path}"; then
+                cleanup_ok=false
+            fi
         fi
     done
     if [[ "${preserve_backups}" != "true" ]]; then
         for temporary_path in "${certificate_backup}" "${private_key_backup}"; do
             if [[ -n "${temporary_path}" && -f "${temporary_path}" ]]; then
-                rm -f -- "${temporary_path}"
+                if ! rm -f -- "${temporary_path}"; then
+                    cleanup_ok=false
+                fi
             fi
         done
     fi
+    [[ "${cleanup_ok}" == "true" ]]
 }
 
 restore_previous_certificate() {
@@ -159,7 +214,13 @@ run_activation_command() {
             activation_command_status=125
         fi
     fi
-    rm -f -- "${activation_status_file}"
+    if [[ "${activation_command_status}" -eq 0 ]]; then
+        activation_complete=true
+        trap - EXIT
+    fi
+    if ! rm -f -- "${activation_status_file}"; then
+        echo "Warning: unable to remove the activation status file." >&2
+    fi
     activation_status_file=""
 }
 
@@ -175,7 +236,9 @@ certificate_exit() {
         echo "Certificate activation failed; restoring the previous live files." >&2
         if ! rollback_certificate_activation; then
             echo "Certificate rollback failed; operator action is required." >&2
-            exit_status=1
+            if [[ "${exit_status}" -eq 0 ]]; then
+                exit_status=1
+            fi
         fi
     fi
     cleanup
@@ -233,9 +296,10 @@ else
 fi
 
 if [[ "${activation_command_status}" -eq 0 ]]; then
-    activation_complete=true
     trap - EXIT INT TERM
-    cleanup
+    if ! cleanup; then
+        echo "Warning: certificate activation committed, but temporary-file cleanup failed." >&2
+    fi
     if [[ "${activation_interrupted_status}" -ne 0 ]]; then
         exit "${activation_interrupted_status}"
     fi
@@ -252,7 +316,9 @@ if ! rollback_certificate_activation; then
     echo "Certificate rollback failed; backups were retained for operator recovery." >&2
 fi
 trap - EXIT INT TERM
-cleanup
+if ! cleanup; then
+    echo "Warning: rollback completed, but temporary-file cleanup failed." >&2
+fi
 if [[ "${failure_status}" -eq 0 ]]; then
     failure_status=1
 fi

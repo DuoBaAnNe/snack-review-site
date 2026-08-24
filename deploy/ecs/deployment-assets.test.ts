@@ -100,8 +100,7 @@ test('certificate installer restores live files on failure or interruption', () 
     assert.match(certificate, /rollback_certificate_activation/);
     assert.match(certificate, /record_activation_interrupt/);
     assertBefore(certificate, 'trap certificate_exit EXIT', 'live_files_replaced=true');
-    assertBefore(certificate, 'run_activation_command systemctl reload nginx', 'activation_complete=true');
-    assertBefore(certificate, 'run_activation_command systemctl start nginx', 'activation_complete=true');
+    assertBefore(certificate, 'activation_complete=true', 'rm -f -- "${activation_status_file}"');
     assertBefore(certificate, 'activation_complete=true', 'trap - EXIT INT TERM');
 });
 
