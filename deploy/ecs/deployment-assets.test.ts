@@ -19,7 +19,8 @@ test('systemd runs Next.js as the dedicated user on loopback', () => {
 test('nginx terminates TLS and proxies only to the loopback app', () => {
     const nginx = read('deploy/ecs/nginx/linglingqi.conf');
     assert.match(nginx, /server_name linglingqi\.fun www\.linglingqi\.fun;/);
-    assert.match(nginx, /proxy_pass http:\/\/127\.0\.0\.1:3000;/);
+    const proxyPassTargets = [...nginx.matchAll(/proxy_pass\s+([^;\s]+)\s*;/g)].map((match) => match[1]);
+    assert.deepEqual(proxyPassTargets, ['http://127.0.0.1:3000']);
     assert.match(nginx, /client_max_body_size 110m;/);
     assert.match(nginx, /proxy_read_timeout 90s;/);
     assert.match(nginx, /ssl_certificate \/etc\/nginx\/ssl\/linglingqi\/fullchain\.pem;/);
@@ -55,8 +56,16 @@ test('environment example names secrets but contains no values', () => {
         'ANTHROPIC_AUTH_TOKEN=',
         'ANTHROPIC_BASE_URL=',
         'ANTHROPIC_MODEL=',
+        'ADMIN_PASSWORD_HASH=',
+        'CRON_SECRET=',
         'APP_GIT_SHA=',
     ];
-    for (const name of required) assert.match(envExample, new RegExp(`^${name}$`, 'm'));
-    assert.doesNotMatch(envExample, /VERCEL_OIDC_TOKEN|BLOB_READ_WRITE_TOKEN/);
+    const assignmentLines = envExample
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#'));
+    for (const line of assignmentLines) {
+        assert.match(line, /^(?:TURSO_DATABASE_URL|TURSO_AUTH_TOKEN|SESSION_SECRET|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_BASE_URL|ANTHROPIC_MODEL|ADMIN_PASSWORD_HASH|CRON_SECRET|APP_GIT_SHA)=$/);
+    }
+    assert.deepEqual([...assignmentLines].sort(), [...required].sort());
 });
