@@ -16,21 +16,37 @@ fi
 
 certificate_source="$1"
 private_key_source="$2"
-destination_dir="/etc/nginx/ssl/linglingqi"
+destination_dir="${LINGLINGQI_CERTIFICATE_DESTINATION_DIR:-/etc/nginx/ssl/linglingqi}"
+if [[ "${destination_dir}" != /* ]] || [[ -L "${destination_dir}" ]] || \
+    [[ -e "${destination_dir}" && ! -d "${destination_dir}" ]]; then
+    echo "Certificate destination must be an absolute, non-symlinked directory." >&2
+    exit 1
+fi
 certificate_path="${destination_dir}/fullchain.pem"
 private_key_path="${destination_dir}/privkey.pem"
 certificate_stage=""
 private_key_stage=""
+certificate_restore_stage=""
+private_key_restore_stage=""
 certificate_backup=""
 private_key_backup=""
+activation_status_file=""
 had_certificate=false
 had_private_key=false
+nginx_was_active=false
 live_files_replaced=false
 activation_complete=false
 preserve_backups=false
+rollback_in_progress=false
+activation_pid=""
+activation_command_status=125
+activation_interrupted_status=0
 
 cleanup() {
-    for temporary_path in "${certificate_stage}" "${private_key_stage}"; do
+    for temporary_path in \
+        "${certificate_stage}" "${private_key_stage}" \
+        "${certificate_restore_stage}" "${private_key_restore_stage}" \
+        "${activation_status_file}"; do
         if [[ -n "${temporary_path}" && -f "${temporary_path}" ]]; then
             rm -f -- "${temporary_path}"
         fi
@@ -47,8 +63,11 @@ cleanup() {
 restore_previous_certificate() {
     local restore_ok=true
     if [[ "${had_certificate}" == "true" && -f "${certificate_backup}" ]]; then
-        if mv -fT -- "${certificate_backup}" "${certificate_path}"; then
-            certificate_backup=""
+        certificate_restore_stage="$(mktemp "${destination_dir}/fullchain.restore.XXXXXX")"
+        if cp --preserve=mode,ownership,timestamps -- \
+            "${certificate_backup}" "${certificate_restore_stage}" && \
+            mv -fT -- "${certificate_restore_stage}" "${certificate_path}"; then
+            certificate_restore_stage=""
         else
             restore_ok=false
         fi
@@ -59,8 +78,11 @@ restore_previous_certificate() {
     fi
 
     if [[ "${had_private_key}" == "true" && -f "${private_key_backup}" ]]; then
-        if mv -fT -- "${private_key_backup}" "${private_key_path}"; then
-            private_key_backup=""
+        private_key_restore_stage="$(mktemp "${destination_dir}/privkey.restore.XXXXXX")"
+        if cp --preserve=mode,ownership,timestamps -- \
+            "${private_key_backup}" "${private_key_restore_stage}" && \
+            mv -fT -- "${private_key_restore_stage}" "${private_key_path}"; then
+            private_key_restore_stage=""
         else
             restore_ok=false
         fi
@@ -73,17 +95,86 @@ restore_previous_certificate() {
     [[ "${restore_ok}" == "true" ]]
 }
 
+rollback_certificate_activation() {
+    local files_restored=true
+    local service_restored=true
+    rollback_in_progress=true
+    trap '' INT TERM
+
+    if ! restore_previous_certificate; then
+        files_restored=false
+    fi
+
+    if [[ "${nginx_was_active}" == "true" ]]; then
+        if [[ "${files_restored}" != "true" ]] || ! nginx -t || \
+            ! systemctl reload nginx; then
+            service_restored=false
+        fi
+    elif ! systemctl stop nginx; then
+        service_restored=false
+    fi
+
+    if [[ "${files_restored}" == "true" && "${service_restored}" == "true" ]]; then
+        live_files_replaced=false
+        preserve_backups=false
+        return 0
+    fi
+
+    preserve_backups=true
+    return 1
+}
+
+record_activation_interrupt() {
+    local signal_status="$1"
+    if [[ "${activation_interrupted_status}" -eq 0 ]]; then
+        activation_interrupted_status="${signal_status}"
+    fi
+}
+
+run_activation_command() {
+    activation_command_status=125
+    activation_interrupted_status=0
+    activation_status_file="$(mktemp "${destination_dir}/activation.status.XXXXXX")"
+    trap 'record_activation_interrupt 130' INT
+    trap 'record_activation_interrupt 143' TERM
+
+    (
+        set +e
+        "$@"
+        command_status="$?"
+        printf '%s\n' "${command_status}" >"${activation_status_file}"
+        exit "${command_status}"
+    ) &
+    activation_pid="$!"
+
+    set +e
+    while kill -0 "${activation_pid}" 2>/dev/null; do
+        wait "${activation_pid}"
+    done
+    set -e
+
+    if [[ -s "${activation_status_file}" ]]; then
+        activation_command_status="$(<"${activation_status_file}")"
+        if [[ ! "${activation_command_status}" =~ ^[0-9]+$ ]]; then
+            activation_command_status=125
+        fi
+    fi
+    rm -f -- "${activation_status_file}"
+    activation_status_file=""
+}
+
 certificate_exit() {
     local exit_status="$?"
     trap - EXIT
     trap - INT
     trap - TERM
     set +e
-    if [[ "${live_files_replaced}" == "true" && "${activation_complete}" != "true" ]]; then
+    if [[ "${live_files_replaced}" == "true" && \
+        "${activation_complete}" != "true" && \
+        "${rollback_in_progress}" != "true" ]]; then
         echo "Certificate activation failed; restoring the previous live files." >&2
-        if ! restore_previous_certificate; then
+        if ! rollback_certificate_activation; then
             echo "Certificate rollback failed; operator action is required." >&2
-            preserve_backups=true
             exit_status=1
         fi
     fi
@@ -112,6 +203,19 @@ if [[ -f "${private_key_path}" ]]; then
     cp --preserve=mode,ownership,timestamps -- "${private_key_path}" "${private_key_backup}"
 fi
 
+set +e
+systemctl is-active --quiet nginx
+nginx_state_status="$?"
+set -e
+case "${nginx_state_status}" in
+    0) nginx_was_active=true ;;
+    3) nginx_was_active=false ;;
+    *)
+        echo "Unable to determine the original Nginx service state." >&2
+        exit 1
+        ;;
+esac
+
 live_files_replaced=true
 mv -fT -- "${certificate_stage}" "${certificate_path}"
 certificate_stage=""
@@ -122,13 +226,34 @@ chmod 0644 "${certificate_path}"
 chmod 0600 "${private_key_path}"
 nginx -t
 
-if systemctl is-active --quiet nginx; then
-    systemctl reload nginx
+if [[ "${nginx_was_active}" == "true" ]]; then
+    run_activation_command systemctl reload nginx
 else
-    systemctl start nginx
+    run_activation_command systemctl start nginx
 fi
 
-activation_complete=true
+if [[ "${activation_command_status}" -eq 0 ]]; then
+    activation_complete=true
+    trap - EXIT INT TERM
+    cleanup
+    if [[ "${activation_interrupted_status}" -ne 0 ]]; then
+        exit "${activation_interrupted_status}"
+    fi
+    echo "Certificate installed and Nginx activated."
+    exit 0
+fi
+
+failure_status="${activation_command_status}"
+if [[ "${activation_interrupted_status}" -ne 0 ]]; then
+    failure_status="${activation_interrupted_status}"
+fi
+trap '' INT TERM
+if ! rollback_certificate_activation; then
+    echo "Certificate rollback failed; backups were retained for operator recovery." >&2
+fi
 trap - EXIT INT TERM
 cleanup
-echo "Certificate installed and Nginx activated."
+if [[ "${failure_status}" -eq 0 ]]; then
+    failure_status=1
+fi
+exit "${failure_status}"

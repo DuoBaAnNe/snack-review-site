@@ -80,12 +80,15 @@ test('deploy rejects an untrusted bare repository before fetching', () => {
 
 test('certificate installer reloads an active Nginx service', () => {
     const certificate = read('deploy/ecs/install-certificate.sh');
-    assert.match(certificate, /if systemctl is-active --quiet nginx; then\s+systemctl reload nginx/s);
+    assert.match(certificate, /LINGLINGQI_CERTIFICATE_DESTINATION_DIR/);
+    assert.match(certificate, /nginx_was_active=true/);
+    assert.match(certificate, /run_activation_command systemctl reload nginx/);
 });
 
 test('certificate installer starts an inactive Nginx service', () => {
     const certificate = read('deploy/ecs/install-certificate.sh');
-    assert.match(certificate, /systemctl reload nginx\s+else\s+systemctl start nginx\s+fi/s);
+    assert.match(certificate, /run_activation_command systemctl start nginx/);
+    assert.match(certificate, /systemctl stop nginx/);
 });
 
 test('certificate installer restores live files on failure or interruption', () => {
@@ -94,9 +97,11 @@ test('certificate installer restores live files on failure or interruption', () 
     assert.match(certificate, /trap 'exit 130' INT/);
     assert.match(certificate, /trap 'exit 143' TERM/);
     assert.match(certificate, /restore_previous_certificate/);
+    assert.match(certificate, /rollback_certificate_activation/);
+    assert.match(certificate, /record_activation_interrupt/);
     assertBefore(certificate, 'trap certificate_exit EXIT', 'live_files_replaced=true');
-    assertBefore(certificate, 'systemctl reload nginx', 'activation_complete=true');
-    assertBefore(certificate, 'systemctl start nginx', 'activation_complete=true');
+    assertBefore(certificate, 'run_activation_command systemctl reload nginx', 'activation_complete=true');
+    assertBefore(certificate, 'run_activation_command systemctl start nginx', 'activation_complete=true');
     assertBefore(certificate, 'activation_complete=true', 'trap - EXIT INT TERM');
 });
 
