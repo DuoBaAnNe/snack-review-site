@@ -9,6 +9,7 @@ import { GeoComponent, TooltipComponent } from 'echarts/components';
 import { CanvasRenderer } from 'echarts/renderers';
 import type { Snack } from '@/types';
 import { detectProvince } from '@/lib/provinces';
+import { getMapPanelPosition, type MapPanelPosition } from './snack-map-panel-position';
 
 echarts.use([MapChart, GeoComponent, TooltipComponent, CanvasRenderer]);
 
@@ -116,8 +117,7 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
     const [floatPanel, setFloatPanel] = useState<{
         province: string;
         snacks: Snack[];
-        clientX: number;
-        clientY: number;
+        panelPosition: MapPanelPosition;
         pinned: boolean;
     } | null>(null);
 
@@ -244,18 +244,21 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
         };
 
         chart.setOption(option);
+        const container = containerRef.current;
 
         // ECharts mousemove: fires on BOTH provinces AND empty areas for map series
         chart.on('mousemove', (params: any) => {
             if (params.data?.snacks && params.data.snacks.length > 0) {
                 const cx = params.event?.event?.clientX ?? 0;
                 const cy = params.event?.event?.clientY ?? 0;
+                if (!container) return;
+                const panelPosition = getMapPanelPosition(cx, cy, container.getBoundingClientRect());
                 setFloatPanel((prev) => {
                     if (prev?.pinned) return prev;
                     return {
                         province: params.data.shortName || params.name,
                         snacks: params.data.snacks,
-                        clientX: cx, clientY: cy,
+                        panelPosition,
                         pinned: false,
                     };
                 });
@@ -265,7 +268,6 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
             }
         });
 
-        const container = containerRef.current;
         const onContainerLeave = () => setFloatPanel((prev) => prev?.pinned ? prev : null);
         container?.addEventListener('mouseleave', onContainerLeave);
 
@@ -273,10 +275,11 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
             if (params.data?.snacks && params.data.snacks.length > 0) {
                 const cx = params.event?.event?.clientX ?? 0;
                 const cy = params.event?.event?.clientY ?? 0;
+                if (!container) return;
                 setFloatPanel({
                     province: params.data.shortName || params.name,
                     snacks: params.data.snacks,
-                    clientX: cx, clientY: cy,
+                    panelPosition: getMapPanelPosition(cx, cy, container.getBoundingClientRect()),
                     pinned: true,
                 });
             } else {
@@ -315,13 +318,12 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
                     </div>
                 )}
 
-                {/* Custom floating panel — fixed position, offset to the right of cursor */}
+                {/* Custom floating panel — anchored to the clicked point inside the map */}
                 {floatPanel && floatPanel.snacks.length > 0 && (
                     <div
-                        className="fixed z-[9999] bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[180px] max-w-[280px]"
+                        className="z-[9999] bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[180px] max-w-[280px]"
                         style={{
-                            left: floatPanel.clientX + 18,
-                            top: floatPanel.clientY - 30,
+                            ...floatPanel.panelPosition,
                             pointerEvents: floatPanel.pinned ? 'auto' : 'none',
                         }}
                     >
