@@ -14,7 +14,7 @@ export default function SnackDetailNavigation() {
             <button
                 onClick={() => setMenuOpen((open) => !open)}
                 aria-label={menuOpen ? '关闭菜单' : '打开菜单'}
-                className="fixed top-2.5 left-2 z-50 w-9 h-9 rounded-lg flex items-center justify-center text-gray-600 hover:bg-white/60 transition-colors"
+                className="fixed top-2.5 left-2 z-50 w-9 h-9 rounded-lg flex items-center justify-center text-gray-600 hover:text-orange-500 hover:bg-white/60 transition-colors"
             >
                 <span className="text-xl leading-none">☰</span>
             </button>
