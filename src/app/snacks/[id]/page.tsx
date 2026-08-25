@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getSnackById, getAllSnacks } from '@/lib/db';
+import SnackDetailNavigation from '@/components/SnackDetailNavigation';
 import SnackDetail from './SnackDetail';
 
 export const dynamic = 'force-dynamic';
@@ -26,8 +28,17 @@ export default async function SnackDetailPage({ params }: { params: Promise<{ id
         .slice(0, 3);
 
     return (
-        <div className="max-w-4xl mx-auto px-4 py-6 md:py-10">
-            <SnackDetail snack={snack} related={related} />
-        </div>
+        <>
+            <SnackDetailNavigation />
+            <div className="max-w-4xl mx-auto px-4 py-6 md:py-10">
+                <Link
+                    href="/"
+                    className="inline-flex items-center mb-4 text-sm font-medium text-gray-500 hover:text-orange-500 transition-colors"
+                >
+                    ← 返回首页
+                </Link>
+                <SnackDetail snack={snack} related={related} />
+            </div>
+        </>
     );
 }
