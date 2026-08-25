@@ -24,54 +24,54 @@
 ### Task 1: Snack detail navigation contract and implementation
 
 **Files:**
-- Create: `src/app/snacks/[id]/SnackDetail.navigation.test.ts`
+- Create: `src/lib/snack-detail-navigation.test.ts`
+- Create: `src/lib/snack-detail-navigation.ts`
 - Create: `src/components/SnackDetailNavigation.tsx`
 - Modify: `src/app/snacks/[id]/page.tsx`
 - Modify: `package.json`
 
 **Interfaces:**
 - Consumes: `HomeSidebar` props `open`, `onClose`, `activeCategory`, `onSelectCategory`, `onGoSection`, and `onOpenSearch`.
+- Produces: `getSnackDetailNavigationHref(target: SnackDetailNavigationTarget): string`, the single tested mapping from menu actions to destinations.
 - Produces: default client component `SnackDetailNavigation(): JSX.Element` rendered once by every successful `/snacks/[id]` page.
-- Produces: npm script `test:detail-navigation` for the source-level route contract.
+- Produces: npm script `test:detail-navigation` for the navigation behavior contract.
 
 - [ ] **Step 1: Read the test-quality rules before writing the test**
 
-Read `superpowers/test-driven-development/writing-good-tests.md` completely. The production changes that make the test pass must be exactly: creating `SnackDetailNavigation.tsx`, rendering it in `[id]/page.tsx`, and adding the explicit home link.
+Read `superpowers/test-driven-development/writing-good-tests.md` completely. A realistic mutation such as returning the wrong category query, section hash, or search URL must make the focused test fail.
 
 - [ ] **Step 2: Write the failing route contract test**
 
-Create `src/app/snacks/[id]/SnackDetail.navigation.test.ts`:
+Create `src/lib/snack-detail-navigation.test.ts`:
 
 ```ts
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { getSnackDetailNavigationHref } from './snack-detail-navigation';
 
-const pageSource = readFileSync(new URL('./page.tsx', import.meta.url), 'utf8');
-const navigationSource = readFileSync(
-    new URL('../../../components/SnackDetailNavigation.tsx', import.meta.url),
-    'utf8',
-);
-
-test('every snack detail page renders the shared hamburger and an explicit home link', () => {
-    assert.match(pageSource, /<SnackDetailNavigation\s*\/>/);
-    assert.match(pageSource, /href=["']\/["']/);
-    assert.match(pageSource, /← 返回首页/);
-    assert.match(navigationSource, /<HomeSidebar/);
-    assert.match(navigationSource, /aria-label=\{menuOpen \? '关闭菜单' : '打开菜单'\}/);
+test('detail category menu targets the matching homepage filter', () => {
+    assert.equal(getSnackDetailNavigationHref({ kind: 'category', category: null }), '/');
+    assert.equal(
+        getSnackDetailNavigationHref({ kind: 'category', category: '肉类零食' }),
+        '/?cat=%E8%82%89%E7%B1%BB%E9%9B%B6%E9%A3%9F',
+    );
 });
 
-test('detail menu routes every homepage destination correctly', () => {
-    assert.match(navigationSource, /category \? `\/\?cat=\$\{encodeURIComponent\(category\)\}` : '\/'/);
-    assert.match(navigationSource, /router\.push\(`\/#\$\{id\}`\)/);
-    assert.match(navigationSource, /router\.push\('\/search'\)/);
+test('detail browse menu targets each homepage section', () => {
+    assert.equal(getSnackDetailNavigationHref({ kind: 'section', id: 'sec-map' }), '/#sec-map');
+    assert.equal(getSnackDetailNavigationHref({ kind: 'section', id: 'sec-news' }), '/#sec-news');
+    assert.equal(getSnackDetailNavigationHref({ kind: 'section', id: 'sec-ing' }), '/#sec-ing');
+});
+
+test('detail search menu targets the search page', () => {
+    assert.equal(getSnackDetailNavigationHref({ kind: 'search' }), '/search');
 });
 ```
 
 Add this script to `package.json`:
 
 ```json
-"test:detail-navigation": "npx --yes tsx@4.23.12 --test src/app/snacks/[id]/SnackDetail.navigation.test.ts"
+"test:detail-navigation": "npx --yes tsx@4.23.12 --test src/lib/snack-detail-navigation.test.ts"
 ```
 
 - [ ] **Step 3: Run the test and verify the RED state**
@@ -82,9 +82,30 @@ Run:
 npm run test:detail-navigation
 ```
 
-Expected: FAIL because `src/components/SnackDetailNavigation.tsx` does not exist. This is the intended missing-feature failure, not a syntax failure.
+Expected: FAIL because `src/lib/snack-detail-navigation.ts` does not exist. This is the intended missing-feature failure, not a syntax failure.
 
-- [ ] **Step 4: Implement the detail-page hamburger controller**
+- [ ] **Step 4: Implement the tested destination mapping**
+
+Create `src/lib/snack-detail-navigation.ts`:
+
+```ts
+export type SnackDetailNavigationTarget =
+    | { kind: 'category'; category: string | null }
+    | { kind: 'section'; id: 'sec-map' | 'sec-news' | 'sec-ing' }
+    | { kind: 'search' };
+
+export function getSnackDetailNavigationHref(target: SnackDetailNavigationTarget): string {
+    if (target.kind === 'category') {
+        return target.category ? `/?cat=${encodeURIComponent(target.category)}` : '/';
+    }
+    if (target.kind === 'section') {
+        return `/#${target.id}`;
+    }
+    return '/search';
+}
+```
+
+- [ ] **Step 5: Implement the detail-page hamburger controller**
 
 Create `src/components/SnackDetailNavigation.tsx`:
 
@@ -94,6 +115,7 @@ Create `src/components/SnackDetailNavigation.tsx`:
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import HomeSidebar from './HomeSidebar';
+import { getSnackDetailNavigationHref } from '@/lib/snack-detail-navigation';
 
 export default function SnackDetailNavigation() {
     const router = useRouter();
@@ -115,15 +137,17 @@ export default function SnackDetailNavigation() {
                 activeCategory={null}
                 onSelectCategory={(category) => {
                     setMenuOpen(false);
-                    router.push(category ? `/?cat=${encodeURIComponent(category)}` : '/');
+                    router.push(getSnackDetailNavigationHref({ kind: 'category', category }));
                 }}
                 onGoSection={(id) => {
                     setMenuOpen(false);
-                    router.push(`/#${id}`);
+                    if (id === 'sec-map' || id === 'sec-news' || id === 'sec-ing') {
+                        router.push(getSnackDetailNavigationHref({ kind: 'section', id }));
+                    }
                 }}
                 onOpenSearch={() => {
                     setMenuOpen(false);
-                    router.push('/search');
+                    router.push(getSnackDetailNavigationHref({ kind: 'search' }));
                 }}
             />
         </>
@@ -131,7 +155,7 @@ export default function SnackDetailNavigation() {
 }
 ```
 
-- [ ] **Step 5: Render navigation and the explicit home link on every detail page**
+- [ ] **Step 6: Render navigation and the explicit home link on every detail page**
 
 In `src/app/snacks/[id]/page.tsx`, import `Link` and `SnackDetailNavigation`, then change the successful page return to:
 
@@ -152,7 +176,7 @@ return (
 );
 ```
 
-- [ ] **Step 6: Run the focused test and verify the GREEN state**
+- [ ] **Step 7: Run the focused test and verify the GREEN state**
 
 Run:
 
@@ -160,23 +184,23 @@ Run:
 npm run test:detail-navigation
 ```
 
-Expected: 2 tests pass, 0 fail.
+Expected: 3 tests pass, 0 fail.
 
-- [ ] **Step 7: Run changed-file lint and the production build**
+- [ ] **Step 8: Run changed-file lint and the production build**
 
 Run:
 
 ```powershell
-npx eslint src/components/SnackDetailNavigation.tsx "src/app/snacks/[id]/page.tsx" "src/app/snacks/[id]/SnackDetail.navigation.test.ts"
+npx eslint src/lib/snack-detail-navigation.ts src/lib/snack-detail-navigation.test.ts src/components/SnackDetailNavigation.tsx "src/app/snacks/[id]/page.tsx"
 npm run build
 ```
 
 Expected: changed-file lint exits 0 and the Next.js production build exits 0.
 
-- [ ] **Step 8: Commit the tested implementation**
+- [ ] **Step 9: Commit the tested implementation**
 
 ```powershell
-git add package.json src/components/SnackDetailNavigation.tsx "src/app/snacks/[id]/page.tsx" "src/app/snacks/[id]/SnackDetail.navigation.test.ts"
+git add package.json src/lib/snack-detail-navigation.ts src/lib/snack-detail-navigation.test.ts src/components/SnackDetailNavigation.tsx "src/app/snacks/[id]/page.tsx"
 git commit -m "feat: add navigation to snack detail pages"
 ```
 
@@ -237,4 +261,3 @@ git log -2 --oneline
 ```
 
 Expected: source tree is clean, the implementation commit is present, and no merge, push, or deployment has occurred.
-
