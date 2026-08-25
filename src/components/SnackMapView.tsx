@@ -298,7 +298,7 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
 
     return (
         <div>
-            <div ref={containerRef} className="relative mx-auto w-full">
+            <div ref={containerRef} className="relative isolate mx-auto w-full">
                 {mapState === 'ready' ? (
                     <div ref={chartRef} style={{ width: '100%', height: chartH }} />
                 ) : mapState === 'loading' ? (
@@ -321,7 +321,7 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
                 {/* Custom floating panel — anchored to the clicked point inside the map */}
                 {floatPanel && floatPanel.snacks.length > 0 && (
                     <div
-                        className="z-[9999] bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[180px] max-w-[280px]"
+                        className="z-30 bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[180px] max-w-[280px]"
                         style={{
                             ...floatPanel.panelPosition,
                             pointerEvents: floatPanel.pinned ? 'auto' : 'none',
