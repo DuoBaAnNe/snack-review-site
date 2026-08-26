@@ -27,6 +27,8 @@ test('systemd runs Next.js as the dedicated user on loopback', () => {
 test('nginx terminates TLS and proxies only to the loopback app', () => {
     const nginx = read('deploy/ecs/nginx/linglingqi.conf');
     assert.match(nginx, /server_name linglingqi\.fun www\.linglingqi\.fun;/);
+    assert.equal((nginx.match(/listen 443 ssl http2;/g) ?? []).length, 2);
+    assert.doesNotMatch(nginx, /^\s*http2 on;$/m);
     const proxyPassTargets = [...nginx.matchAll(/proxy_pass\s+([^;\s]+)\s*;/g)].map((match) => match[1]);
     assert.deepEqual(proxyPassTargets, ['http://127.0.0.1:3000']);
     assert.match(nginx, /client_max_body_size 110m;/);
