@@ -1,0 +1,7 @@
+{
+  "region": "cn-shenzhen",
+  "bucket": "linglingqi-ecs-releases-example",
+  "endpoint": "https://oss-cn-shenzhen-internal.aliyuncs.com",
+  "prefix": "ecs-releases",
+  "ecsRoleName": "LinglingqiEcsReleaseReader"
+}

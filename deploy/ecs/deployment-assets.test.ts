@@ -105,6 +105,43 @@ test('offline deployment never fetches GitHub', () => {
     assert.match(deploy, /else[\s\S]*import_verified_offline_bundle/);
 });
 
+test('OSS deployment reads only a fixed request manifest and derives immutable release keys', () => {
+    const script = read('deploy/ecs/deploy-from-oss.sh');
+    assert.match(script, /if \[\[ "\$#" -ne 0 \]\]/);
+    assert.match(script, /ecs-releases\/requests\/current\.json/);
+    assert.match(script, /releaseSha/);
+    assert.match(script, /\^\[0-9a-f\]\{40\}\$/);
+    assert.match(script, /ecs-releases\/\$\{release_sha\}\/source\.bundle/);
+    assert.match(script, /ecs-releases\/\$\{release_sha\}\/source\.bundle\.sha256/);
+    assert.doesNotMatch(script, /release_sha="\$1"/);
+    assert.match(script, /--mode EcsRamRole/);
+    assert.match(script, /--ecs-role-name "\$\{ecs_role_name\}"/);
+    assert.match(script, /oss-cn-shenzhen-internal\.aliyuncs\.com/);
+    assert.match(script, /mktemp --directory \/run\/linglingqi-release\.XXXXXXXX/);
+    assert.match(script, /trap cleanup EXIT/);
+    assert.match(script, /deploy\.sh" --bundle/);
+    assert.doesNotMatch(script, /exec .*deploy\.sh/);
+});
+
+test('OSS deployment parses a constrained JSON configuration without sourcing it', () => {
+    const script = read('deploy/ecs/deploy-from-oss.sh');
+    const example = JSON.parse(read('deploy/ecs/alibaba-deployment.example.json'));
+    assert.deepEqual(example, {
+        region: 'cn-shenzhen',
+        bucket: 'linglingqi-ecs-releases-example',
+        endpoint: 'https://oss-cn-shenzhen-internal.aliyuncs.com',
+        prefix: 'ecs-releases',
+        ecsRoleName: 'LinglingqiEcsReleaseReader',
+    });
+    assert.doesNotMatch(script, /(?:source|\.) .*alibaba-deployment/);
+    assert.match(script, /JSON\.parse/);
+    assert.match(script, /config\.region !== 'cn-shenzhen'/);
+    assert.match(script, /config\.endpoint !== 'https:\/\/oss-cn-shenzhen-internal\.aliyuncs\.com'/);
+    assert.match(script, /config\.prefix !== 'ecs-releases'/);
+    assert.match(script, /\^\[a-z0-9\]\[a-z0-9-\]\{2,61\}\[a-z0-9\]\$/);
+    assert.match(script, /\^\[A-Za-z\]\[A-Za-z0-9_-\]\{0,63\}\$/);
+});
+
 test('offline bundle validation snapshots an ordinary artifact before local verification and import', () => {
     const deploy = read('deploy/ecs/deploy.sh');
     assert.match(deploy, /snapshot_offline_bundle\(\)/);
