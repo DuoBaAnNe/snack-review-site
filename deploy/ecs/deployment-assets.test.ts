@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import test from 'node:test';
@@ -24,6 +24,56 @@ function findBash() {
     const bash = resolve(gitExecPath.stdout.trim(), '..', '..', '..', 'bin', 'bash.exe');
     assert.ok(existsSync(bash), `Git Bash was not found at ${bash}`);
     return bash;
+}
+
+function runOssDeploymentScenario(options: {
+    args?: string;
+    manifest?: string;
+    ossutilFailure?: boolean;
+}) {
+    const bash = findBash();
+    const tempRoot = mkdtempSync(resolve(process.env.TEMP ?? process.env.TMP ?? '.', 'linglingqi-oss-test-'));
+    const command = [
+        'set -Eeuo pipefail',
+        'temp_root="$(cygpath -u "$1")"',
+        'runtime_dir="${temp_root}/runtime"',
+        'fake_bin="${temp_root}/bin"',
+        'mkdir -p "${runtime_dir}" "${fake_bin}"',
+        'cat > "${temp_root}/config.json" <<\'JSON\'',
+        '{"region":"cn-shenzhen","bucket":"abc","endpoint":"https://oss-cn-shenzhen-internal.aliyuncs.com","prefix":"ecs-releases","ecsRoleName":"9.release-reader"}',
+        'JSON',
+        'cat > "${fake_bin}/ossutil" <<\'FAKE_OSSUTIL\'',
+        '#!/usr/bin/env bash',
+        'set -Eeuo pipefail',
+        'printf "%s\\n" "$*" >> "${LINGLINGQI_OSS_TEST_ROOT}/ossutil-calls"',
+        'if [[ "${LINGLINGQI_OSS_TEST_OSSUTIL_FAILURE:-}" == "true" ]]; then exit 55; fi',
+        'if [[ "$2" == *"ecs-releases/requests/current.json" ]]; then',
+        '    printf "%s" "${LINGLINGQI_OSS_TEST_MANIFEST}" > "$3"',
+        'else',
+        '    printf "artifact" > "$3"',
+        'fi',
+        'FAKE_OSSUTIL',
+        'cat > "${temp_root}/fake-deploy.sh" <<\'FAKE_DEPLOY\'',
+        '#!/usr/bin/env bash',
+        'set -Eeuo pipefail',
+        '[[ "$#" -eq 4 && "$1" == "--bundle" && -f "$3" && -f "$4" ]]',
+        'printf "%s\\n" "$@" >> "${LINGLINGQI_OSS_TEST_ROOT}/deploy-call"',
+        'FAKE_DEPLOY',
+        'chmod +x "${fake_bin}/ossutil" "${temp_root}/fake-deploy.sh"',
+        'export LINGLINGQI_OSS_DEPLOY_LIBRARY_ONLY=true',
+        'export LINGLINGQI_OSS_DEPLOY_TEST_MODE=true',
+        'export LINGLINGQI_OSS_TEST_CONFIG_FILE="${temp_root}/config.json"',
+        'export LINGLINGQI_OSS_TEST_RUNTIME_DIR="${runtime_dir}"',
+        'export LINGLINGQI_OSS_TEST_OSSUTIL="${fake_bin}/ossutil"',
+        'export LINGLINGQI_OSS_TEST_DEPLOY_SCRIPT="${temp_root}/fake-deploy.sh"',
+        'export LINGLINGQI_OSS_TEST_ROOT="${temp_root}"',
+        `export LINGLINGQI_OSS_TEST_MANIFEST='${options.manifest ?? '{"releaseSha":"0123456789abcdef0123456789abcdef01234567"}'}'`,
+        options.ossutilFailure ? 'export LINGLINGQI_OSS_TEST_OSSUTIL_FAILURE=true' : '',
+        'source "$2"',
+        `main${options.args ? ` ${options.args}` : ''}`,
+    ].filter(Boolean).join('\n');
+    const result = spawnSync(bash, ['-lc', command, 'bash', tempRoot, 'deploy/ecs/deploy-from-oss.sh'], { encoding: 'utf8' });
+    return { result, runtimeDir: resolve(tempRoot, 'runtime'), tempRoot };
 }
 
 test('systemd runs Next.js as the dedicated user on loopback', () => {
@@ -138,8 +188,62 @@ test('OSS deployment parses a constrained JSON configuration without sourcing it
     assert.match(script, /config\.region !== 'cn-shenzhen'/);
     assert.match(script, /config\.endpoint !== 'https:\/\/oss-cn-shenzhen-internal\.aliyuncs\.com'/);
     assert.match(script, /config\.prefix !== 'ecs-releases'/);
-    assert.match(script, /\^\[a-z0-9\]\[a-z0-9-\]\{2,61\}\[a-z0-9\]\$/);
-    assert.match(script, /\^\[A-Za-z\]\[A-Za-z0-9_-\]\{0,63\}\$/);
+    assert.match(script, /\^\[a-z0-9\]\[a-z0-9-\]\{1,61\}\[a-z0-9\]\$/);
+    assert.match(script, /\^\[A-Za-z0-9.-\]\{1,64\}\$/);
+});
+
+test('OSS deployment downloads a SHA-derived release once and cleans its temporary directory', () => {
+    const scenario = runOssDeploymentScenario({});
+    try {
+        assert.equal(scenario.result.status, 0, scenario.result.stderr);
+        assert.equal(readFileSync(resolve(scenario.tempRoot, 'ossutil-calls'), 'utf8').trim().split(/\r?\n/).length, 3);
+        const deployArgs = readFileSync(resolve(scenario.tempRoot, 'deploy-call'), 'utf8').trim().split(/\r?\n/);
+        assert.equal(deployArgs.length, 4);
+        assert.deepEqual(deployArgs.slice(0, 2), ['--bundle', '0123456789abcdef0123456789abcdef01234567']);
+        assert.match(deployArgs[2], /source\.bundle$/);
+        assert.match(deployArgs[3], /source\.bundle\.sha256$/);
+        assert.deepEqual(readdirSync(scenario.runtimeDir), []);
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('OSS deployment rejects invocation parameters before downloading', () => {
+    const scenario = runOssDeploymentScenario({ args: 'unexpected' });
+    try {
+        assert.notEqual(scenario.result.status, 0);
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'ossutil-calls')));
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'deploy-call')));
+        assert.deepEqual(readdirSync(scenario.runtimeDir), []);
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('OSS deployment rejects a manifest with fields beyond releaseSha and cleans up', () => {
+    const scenario = runOssDeploymentScenario({
+        manifest: '{"releaseSha":"0123456789abcdef0123456789abcdef01234567","path":"untrusted"}',
+    });
+    try {
+        assert.notEqual(scenario.result.status, 0);
+        assert.ok(existsSync(resolve(scenario.tempRoot, 'ossutil-calls')));
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'deploy-call')));
+        assert.deepEqual(readdirSync(scenario.runtimeDir), []);
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('OSS deployment stops before deploy when ossutil fails and cleans up', () => {
+    const scenario = runOssDeploymentScenario({ ossutilFailure: true });
+    try {
+        assert.notEqual(scenario.result.status, 0);
+        assert.ok(existsSync(resolve(scenario.tempRoot, 'ossutil-calls')));
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'deploy-call')));
+        assert.deepEqual(readdirSync(scenario.runtimeDir), []);
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
 });
 
 test('offline bundle validation snapshots an ordinary artifact before local verification and import', () => {

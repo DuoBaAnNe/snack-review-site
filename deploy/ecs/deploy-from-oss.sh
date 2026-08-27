@@ -1,43 +1,40 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-if [[ "$(id -u)" != "0" ]]; then
-    echo "This deployment script must run as root." >&2
-    exit 1
-fi
-if [[ "$#" -ne 0 ]]; then
-    echo "Usage: $0" >&2
-    exit 1
-fi
+is_windows_test_mode() {
+    [[ "${LINGLINGQI_OSS_DEPLOY_TEST_MODE:-}" == "true" ]] &&
+        [[ "$(uname -s)" =~ ^(MINGW|MSYS|CYGWIN) ]]
+}
 
-config_file="/etc/linglingqi/alibaba-deployment.json"
-deployment_script="/usr/local/libexec/linglingqi/deploy.sh"
-download_dir=""
+configure_dependencies() {
+    config_file="/etc/linglingqi/alibaba-deployment.json"
+    deployment_script="/usr/local/libexec/linglingqi/deploy.sh"
+    ossutil_command="ossutil"
+    runtime_dir="/run"
+    test_mode=false
 
-cleanup() {
-    if [[ -n "${download_dir}" && ! -L "${download_dir}" && \
-        "${download_dir}" == /run/linglingqi-release.* ]]; then
-        rm -rf -- "${download_dir}"
+    if [[ "${LINGLINGQI_OSS_DEPLOY_TEST_MODE:-}" == "true" ]]; then
+        if ! is_windows_test_mode; then
+            echo "OSS deployment test mode is supported only on Windows test hosts." >&2
+            return 1
+        fi
+        if [[ -z "${LINGLINGQI_OSS_TEST_CONFIG_FILE:-}" ||
+            -z "${LINGLINGQI_OSS_TEST_DEPLOY_SCRIPT:-}" ||
+            -z "${LINGLINGQI_OSS_TEST_OSSUTIL:-}" ||
+            -z "${LINGLINGQI_OSS_TEST_RUNTIME_DIR:-}" ]]; then
+            echo "OSS deployment test mode requires all controlled test paths." >&2
+            return 1
+        fi
+        config_file="${LINGLINGQI_OSS_TEST_CONFIG_FILE}"
+        deployment_script="${LINGLINGQI_OSS_TEST_DEPLOY_SCRIPT}"
+        ossutil_command="${LINGLINGQI_OSS_TEST_OSSUTIL}"
+        runtime_dir="${LINGLINGQI_OSS_TEST_RUNTIME_DIR}"
+        test_mode=true
     fi
 }
-trap cleanup EXIT
-trap 'exit 130' INT
-trap 'exit 143' TERM
 
-if [[ -L "${config_file}" || ! -f "${config_file}" ]]; then
-    echo "Install a regular OSS deployment configuration file first." >&2
-    exit 1
-fi
-if [[ "$(stat -c '%u:%a' "${config_file}")" != "0:600" ]]; then
-    echo "The OSS deployment configuration file must be root-owned with mode 0600." >&2
-    exit 1
-fi
-if [[ ! -x "${deployment_script}" || -L "${deployment_script}" ]]; then
-    echo "The deployment script is not an expected executable file." >&2
-    exit 1
-fi
-
-validated_config="$(node - "${config_file}" <<'NODE'
+validate_config() {
+    validated_config="$(node - "${config_file}" <<'NODE'
 const fs = require('node:fs');
 
 const configPath = process.argv[2];
@@ -52,35 +49,42 @@ if (config.region !== 'cn-shenzhen' ||
     config.prefix !== 'ecs-releases' ||
     typeof config.bucket !== 'string' ||
     typeof config.ecsRoleName !== 'string' ||
-    !/^[a-z0-9][a-z0-9-]{2,61}[a-z0-9]$/.test(config.bucket) ||
-    !/^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(config.ecsRoleName)) {
+    !/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(config.bucket) ||
+    !/^[A-Za-z0-9.-]{1,64}$/.test(config.ecsRoleName)) {
     throw new Error('OSS deployment configuration is invalid');
 }
 process.stdout.write([config.region, config.bucket, config.endpoint, config.prefix, config.ecsRoleName].join('\n'));
 NODE
 )"
-mapfile -t config_values <<< "${validated_config}"
-if [[ "${#config_values[@]}" -ne 5 ]]; then
-    echo "The OSS deployment configuration could not be read safely." >&2
-    exit 1
-fi
-region="${config_values[0]}"
-bucket="${config_values[1]}"
-endpoint="${config_values[2]}"
-prefix="${config_values[3]}"
-ecs_role_name="${config_values[4]}"
+    mapfile -t config_values <<< "${validated_config}"
+    if [[ "${#config_values[@]}" -ne 5 ]]; then
+        echo "The OSS deployment configuration could not be read safely." >&2
+        return 1
+    fi
+    region="${config_values[0]}"
+    bucket="${config_values[1]}"
+    endpoint="${config_values[2]}"
+    prefix="${config_values[3]}"
+    ecs_role_name="${config_values[4]}"
+}
 
-download_dir="$(mktemp --directory /run/linglingqi-release.XXXXXXXX)"
-chmod 0700 "${download_dir}"
-request_manifest_path="${download_dir}/current.json"
+cleanup() {
+    if [[ -n "${download_dir:-}" && ! -L "${download_dir}" && \
+        "${download_dir}" == "${runtime_dir}/linglingqi-release."* ]]; then
+        rm -rf -- "${download_dir}"
+    fi
+}
 
-ossutil cp "oss://${bucket}/ecs-releases/requests/current.json" \
-    "${request_manifest_path}" --force \
-    --mode EcsRamRole --ecs-role-name "${ecs_role_name}" \
-    --region "${region}" --endpoint "${endpoint}" >/dev/null
-chmod 0600 "${request_manifest_path}"
+download_object() {
+    local object_key="$1"
+    local destination="$2"
+    "${ossutil_command}" cp "oss://${bucket}/${object_key}" "${destination}" --force \
+        --mode EcsRamRole --ecs-role-name "${ecs_role_name}" \
+        --region "${region}" --endpoint "${endpoint}" >/dev/null
+}
 
-release_sha="$(node - "${request_manifest_path}" <<'NODE'
+read_release_sha() {
+    node - "${request_manifest_path}" <<'NODE'
 const fs = require('node:fs');
 
 const request = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
@@ -93,22 +97,68 @@ if (!request || typeof request !== 'object' || Array.isArray(request) ||
 }
 process.stdout.write(request.releaseSha);
 NODE
-)"
-if [[ ! "${release_sha}" =~ ^[0-9a-f]{40}$ ]]; then
-    echo "The OSS deployment request contains an invalid release SHA." >&2
-    exit 1
+}
+
+main() {
+    configure_dependencies
+
+    if [[ "${test_mode}" != "true" && "$(id -u)" != "0" ]]; then
+        echo "This deployment script must run as root." >&2
+        exit 1
+    fi
+    if [[ "$#" -ne 0 ]]; then
+        echo "Usage: $0" >&2
+        exit 1
+    fi
+    if [[ -L "${config_file}" || ! -f "${config_file}" ]]; then
+        echo "Install a regular OSS deployment configuration file first." >&2
+        exit 1
+    fi
+    if [[ "${test_mode}" != "true" && "$(stat -c '%u:%a' "${config_file}")" != "0:600" ]]; then
+        echo "The OSS deployment configuration file must be root-owned with mode 0600." >&2
+        exit 1
+    fi
+    if [[ ! -x "${deployment_script}" || -L "${deployment_script}" ]]; then
+        echo "The deployment script is not an expected executable file." >&2
+        exit 1
+    fi
+
+    validate_config
+    download_dir=""
+    trap cleanup EXIT
+    trap 'exit 130' INT
+    trap 'exit 143' TERM
+    if [[ "${test_mode}" == "true" ]]; then
+        download_dir="$(mktemp --directory "${runtime_dir}/linglingqi-release.XXXXXXXX")"
+    else
+        download_dir="$(mktemp --directory /run/linglingqi-release.XXXXXXXX)"
+    fi
+    chmod 0700 "${download_dir}"
+    request_manifest_path="${download_dir}/current.json"
+
+    download_object "ecs-releases/requests/current.json" "${request_manifest_path}"
+    chmod 0600 "${request_manifest_path}"
+    release_sha="$(read_release_sha)"
+    if [[ ! "${release_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "The OSS deployment request contains an invalid release SHA." >&2
+        exit 1
+    fi
+
+    bundle_path="${download_dir}/source.bundle"
+    checksum_path="${download_dir}/source.bundle.sha256"
+    download_object "ecs-releases/${release_sha}/source.bundle" "${bundle_path}"
+    download_object "ecs-releases/${release_sha}/source.bundle.sha256" "${checksum_path}"
+    chmod 0600 "${bundle_path}" "${checksum_path}"
+
+    if [[ "${test_mode}" == "true" ]]; then
+        "${deployment_script}" --bundle "${release_sha}" "${bundle_path}" "${checksum_path}"
+    else
+        "/usr/local/libexec/linglingqi/deploy.sh" --bundle "${release_sha}" "${bundle_path}" "${checksum_path}"
+    fi
+}
+
+if [[ "${LINGLINGQI_OSS_DEPLOY_LIBRARY_ONLY:-}" == "true" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
 fi
 
-bundle_path="${download_dir}/source.bundle"
-checksum_path="${download_dir}/source.bundle.sha256"
-ossutil cp "oss://${bucket}/ecs-releases/${release_sha}/source.bundle" \
-    "${bundle_path}" --force \
-    --mode EcsRamRole --ecs-role-name "${ecs_role_name}" \
-    --region "${region}" --endpoint "${endpoint}" >/dev/null
-ossutil cp "oss://${bucket}/ecs-releases/${release_sha}/source.bundle.sha256" \
-    "${checksum_path}" --force \
-    --mode EcsRamRole --ecs-role-name "${ecs_role_name}" \
-    --region "${region}" --endpoint "${endpoint}" >/dev/null
-chmod 0600 "${bundle_path}" "${checksum_path}"
-
-"/usr/local/libexec/linglingqi/deploy.sh" --bundle "${release_sha}" "${bundle_path}" "${checksum_path}"
+main "$@"
