@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { constants, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
+import { resolve } from 'node:path';
 import test from 'node:test';
 
 function read(path: string) {
@@ -13,6 +14,16 @@ function assertBefore(content: string, first: string, second: string) {
     assert.notEqual(firstIndex, -1, `missing first marker: ${first}`);
     assert.notEqual(secondIndex, -1, `missing second marker: ${second}`);
     assert.ok(firstIndex < secondIndex, `${first} must precede ${second}`);
+}
+
+function findBash() {
+    if (process.env.BASH) return process.env.BASH;
+    if (process.platform !== 'win32') return 'bash';
+    const gitExecPath = spawnSync('git', ['--exec-path'], { encoding: 'utf8' });
+    assert.equal(gitExecPath.status, 0, gitExecPath.stderr);
+    const bash = resolve(gitExecPath.stdout.trim(), '..', '..', '..', 'bin', 'bash.exe');
+    assert.ok(existsSync(bash), `Git Bash was not found at ${bash}`);
+    return bash;
 }
 
 test('systemd runs Next.js as the dedicated user on loopback', () => {
@@ -94,22 +105,14 @@ test('offline deployment never fetches GitHub', () => {
     assert.match(deploy, /else[\s\S]*import_verified_offline_bundle/);
 });
 
-test('offline bundle validation snapshots an ordinary artifact before local verification and import', (t) => {
+test('offline bundle validation snapshots an ordinary artifact before local verification and import', () => {
     const deploy = read('deploy/ecs/deploy.sh');
     assert.match(deploy, /snapshot_offline_bundle\(\)/);
     assert.match(deploy, /import_verified_offline_bundle\(\)/);
     assert.match(deploy, /O_NOFOLLOW/);
+    assert.match(deploy, /process\.platform === 'win32'/);
 
-    const bash = process.env.BASH ?? 'bash';
-    const bashProbe = spawnSync(bash, ['--version'], { encoding: 'utf8' });
-    if (bashProbe.error || bashProbe.status !== 0) {
-        t.skip('Bash is unavailable on PATH');
-        return;
-    }
-    if (typeof constants.O_NOFOLLOW !== 'number') {
-        t.skip('the runtime lacks O_NOFOLLOW support');
-        return;
-    }
+    const bash = findBash();
     const command = [
         'set -Eeuo pipefail',
         'export LINGLINGQI_DEPLOY_LIBRARY_ONLY=true',
@@ -124,7 +127,7 @@ test('offline bundle validation snapshots an ordinary artifact before local veri
         'git -C "${temp_dir}/source" tag "${ecs_release_tag}" "${requested_sha}"',
         'mkdir "${temp_dir}/artifacts"',
         'git -C "${temp_dir}/source" bundle create "${temp_dir}/artifacts/source.bundle" "refs/tags/${ecs_release_tag}"',
-        '(cd "${temp_dir}/artifacts" && sha256sum source.bundle > source.bundle.sha256)',
+        '(cd "${temp_dir}/artifacts" && printf "%s  source.bundle\\n" "$(sha256sum source.bundle | cut -d " " -f1)" > source.bundle.sha256)',
         'mkdir "${temp_dir}/trusted"',
         'bundle_snapshot_dir="$(snapshot_offline_bundle "${temp_dir}/artifacts/source.bundle" "${temp_dir}/artifacts/source.bundle.sha256" "${temp_dir}/trusted" "$(id -u)")"',
         '[[ "${bundle_snapshot_dir}" == "${temp_dir}/trusted/bundle."* ]]',

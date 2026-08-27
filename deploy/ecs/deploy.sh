@@ -32,15 +32,17 @@ snapshot_offline_bundle() (
 const fs = require('node:fs');
 const [bundleInput, checksumInput, bundleSnapshot, checksumSnapshot, expectedOwner] = process.argv.slice(2);
 const noFollow = fs.constants.O_NOFOLLOW;
-if (typeof noFollow !== 'number') {
+const isWindows = process.platform === 'win32';
+if (!isWindows && typeof noFollow !== 'number') {
     throw new Error('Offline deployment requires O_NOFOLLOW support');
 }
+const inputOpenFlags = fs.constants.O_RDONLY | (isWindows ? 0 : noFollow);
 
 function copyOpenedRegularFile(input, output) {
-    const inputFd = fs.openSync(input, fs.constants.O_RDONLY | noFollow);
+    const inputFd = fs.openSync(input, inputOpenFlags);
     try {
         const inputStat = fs.fstatSync(inputFd);
-        if (!inputStat.isFile() || inputStat.uid !== Number(expectedOwner) || (inputStat.mode & 0o22) !== 0) {
+        if (!inputStat.isFile() || (!isWindows && (inputStat.uid !== Number(expectedOwner) || (inputStat.mode & 0o22) !== 0))) {
             throw new Error('Offline deployment assets must be regular, root-owned, and not group- or world-writable');
         }
         const outputFd = fs.openSync(output, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
