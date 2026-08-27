@@ -72,6 +72,27 @@ test('deploy serializes validation, build, activation, health, and rollback', ()
     assertBefore(deploy, 'flock --exclusive --timeout 30', 'git clone --bare');
 });
 
+test('deploy accepts only a verified offline bundle under the deployment lock', () => {
+    const deploy = read('deploy/ecs/deploy.sh');
+    assert.match(deploy, /--bundle/);
+    assert.match(deploy, /sha256sum --check/);
+    assert.match(deploy, /git bundle verify/);
+    assert.match(deploy, /ecs-release-\$\{requested_sha\}/);
+    assertBefore(deploy, 'flock --exclusive --timeout 30', 'sha256sum --check');
+    assertBefore(deploy, 'sha256sum --check', 'fetch --force');
+});
+
+test('offline deployment rejects short or uppercase commit identifiers', () => {
+    const deploy = read('deploy/ecs/deploy.sh');
+    assert.match(deploy, /\^\[0-9a-f\]\{40\}\$/);
+});
+
+test('offline deployment never fetches GitHub', () => {
+    const deploy = read('deploy/ecs/deploy.sh');
+    assert.match(deploy, /if \[\[ "\$\{source_mode\}" == "online" \]\]/);
+    assert.match(deploy, /else[\s\S]*git bundle verify/);
+});
+
 test('deploy rejects an untrusted bare repository before fetching', () => {
     const deploy = read('deploy/ecs/deploy.sh');
     assert.match(deploy, /\[\[ -L "\$\{repository_dir\}" \]\]/);

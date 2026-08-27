@@ -5,13 +5,26 @@ if [[ "$(id -u)" != "0" ]]; then
     echo "This deployment script must run as root." >&2
     exit 1
 fi
-if [[ "$#" -ne 1 ]]; then
-    echo "Usage: $0 <git-sha>" >&2
+source_mode="online"
+bundle_path=""
+checksum_path=""
+if [[ "$#" -eq 1 ]]; then
+    requested_sha="$1"
+elif [[ "$#" -eq 4 && "$1" == "--bundle" ]]; then
+    source_mode="bundle"
+    requested_sha="$2"
+    bundle_path="$3"
+    checksum_path="$4"
+else
+    echo "Usage: $0 <git-sha> | $0 --bundle <full-git-sha> <bundle-path> <checksum-path>" >&2
     exit 1
 fi
 
-requested_sha="$1"
-if [[ ! "${requested_sha}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+if [[ "${source_mode}" == "bundle" && ! "${requested_sha}" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Offline deployment requires a full lowercase 40-character Git SHA." >&2
+    exit 1
+fi
+if [[ "${source_mode}" == "online" && ! "${requested_sha}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
     echo "The Git SHA must contain 7 to 40 hexadecimal characters." >&2
     exit 1
 fi
@@ -65,6 +78,37 @@ exec {deployment_lock_fd}<>"${deployment_lock_file}"
 if ! flock --exclusive --timeout 30 "${deployment_lock_fd}"; then
     echo "Another deployment still holds the lock after 30 seconds." >&2
     exit 1
+fi
+
+if [[ "${source_mode}" == "bundle" ]]; then
+    for asset_path in "${bundle_path}" "${checksum_path}"; do
+        if [[ -L "${asset_path}" || ! -f "${asset_path}" ]]; then
+            echo "Offline deployment assets must be regular, non-symlink files." >&2
+            exit 1
+        fi
+        if [[ "$(stat -c '%u' "${asset_path}")" != "0" ]]; then
+            echo "Offline deployment assets must be owned by root." >&2
+            exit 1
+        fi
+    done
+    if [[ "$(basename -- "${bundle_path}")" != "source.bundle" ]]; then
+        echo "Offline deployment bundle must be named source.bundle." >&2
+        exit 1
+    fi
+    if [[ "$(wc -l < "${checksum_path}")" -ne 1 ]] || \
+        ! grep -qxE '[0-9a-f]{64}  source\.bundle' "${checksum_path}"; then
+        echo "Offline deployment checksum must contain one SHA-256 entry for source.bundle." >&2
+        exit 1
+    fi
+    bundle_dir="$(cd -- "$(dirname -- "${bundle_path}")" && pwd -P)"
+    checksum_dir="$(cd -- "$(dirname -- "${checksum_path}")" && pwd -P)"
+    bundle_path="${bundle_dir}/source.bundle"
+    checksum_path="${checksum_dir}/$(basename -- "${checksum_path}")"
+    (
+        cd -- "${bundle_dir}"
+        sha256sum --check --status "${checksum_path}"
+        git bundle verify "${bundle_path}"
+    )
 fi
 
 if [[ ! -f "${environment_file}" || -L "${environment_file}" ]]; then
@@ -147,43 +191,64 @@ if [[ -L "${repository_dir}" ]]; then
     echo "Refusing to use a symlinked repository target ${repository_dir}." >&2
     exit 1
 elif [[ ! -e "${repository_dir}" ]]; then
-    git clone --bare "${repository_url}" "${repository_dir}"
+    if [[ "${source_mode}" == "online" ]]; then
+        git clone --bare "${repository_url}" "${repository_dir}"
+    else
+        git init --bare "${repository_dir}"
+    fi
 elif [[ ! -d "${repository_dir}" ]] || \
     [[ "$(git -C "${repository_dir}" rev-parse --is-bare-repository 2>/dev/null)" != "true" ]]; then
     echo "Refusing to replace unexpected repository target ${repository_dir}." >&2
     exit 1
 fi
-if ! actual_repository_url="$(git -C "${repository_dir}" remote get-url origin 2>/dev/null)"; then
-    echo "The bare repository does not have a readable origin URL." >&2
-    exit 1
-fi
-if [[ "${actual_repository_url}" != "${repository_url}" ]]; then
-    echo "The bare repository origin does not match the official repository URL." >&2
-    exit 1
-fi
-git -C "${repository_dir}" fetch --force --prune origin \
-    '+refs/heads/main:refs/remotes/origin/main'
-git -C "${repository_dir}" fetch --force origin \
-    "+refs/tags/${ecs_release_tag}:refs/tags/${ecs_release_tag}" 2>/dev/null || true
+if [[ "${source_mode}" == "online" ]]; then
+    if ! actual_repository_url="$(git -C "${repository_dir}" remote get-url origin 2>/dev/null)"; then
+        echo "The bare repository does not have a readable origin URL." >&2
+        exit 1
+    fi
+    if [[ "${actual_repository_url}" != "${repository_url}" ]]; then
+        echo "The bare repository origin does not match the official repository URL." >&2
+        exit 1
+    fi
+    git -C "${repository_dir}" fetch --force --prune origin \
+        '+refs/heads/main:refs/remotes/origin/main'
+    git -C "${repository_dir}" fetch --force origin \
+        "+refs/tags/${ecs_release_tag}:refs/tags/${ecs_release_tag}" 2>/dev/null || true
 
-if ! release_sha="$(git -C "${repository_dir}" rev-parse --verify "${requested_sha}^{commit}" 2>/dev/null)"; then
-    echo "The requested SHA does not resolve to a fetched commit." >&2
-    exit 1
+    if ! release_sha="$(git -C "${repository_dir}" rev-parse --verify "${requested_sha}^{commit}" 2>/dev/null)"; then
+        echo "The requested SHA does not resolve to a fetched commit." >&2
+        exit 1
+    fi
+    main_authorized=false
+    tag_authorized=false
+    if git -C "${repository_dir}" merge-base --is-ancestor \
+        "${release_sha}" refs/remotes/origin/main; then
+        main_authorized=true
+    fi
+    if ecs_tag_sha="$(git -C "${repository_dir}" rev-parse --verify \
+        "refs/tags/${ecs_release_tag}^{commit}" 2>/dev/null)" && \
+        [[ "${ecs_tag_sha}" == "${release_sha}" ]]; then
+        tag_authorized=true
+    fi
+    if [[ "${main_authorized}" != "true" && "${tag_authorized}" != "true" ]]; then
+        echo "The requested commit is neither reachable from origin/main nor authorized by its ECS release tag." >&2
+        exit 1
+    fi
+else
+    git -C "${repository_dir}" fetch --force "${bundle_path}" \
+        "+refs/tags/${ecs_release_tag}:refs/tags/${ecs_release_tag}"
+    if ! release_sha="$(git -C "${repository_dir}" rev-parse --verify "${requested_sha}^{commit}" 2>/dev/null)" || \
+        ! tag_sha="$(git -C "${repository_dir}" rev-parse --verify \
+            "refs/tags/${ecs_release_tag}^{commit}" 2>/dev/null)" || \
+        [[ "${release_sha}" != "${requested_sha}" || "${tag_sha}" != "${requested_sha}" ]]; then
+        echo "Offline bundle does not authorize the requested commit with its ECS release tag." >&2
+        exit 1
+    fi
 fi
-main_authorized=false
-tag_authorized=false
-if git -C "${repository_dir}" merge-base --is-ancestor \
-    "${release_sha}" refs/remotes/origin/main; then
-    main_authorized=true
-fi
-if ecs_tag_sha="$(git -C "${repository_dir}" rev-parse --verify \
-    "refs/tags/${ecs_release_tag}^{commit}" 2>/dev/null)" && \
-    [[ "${ecs_tag_sha}" == "${release_sha}" ]]; then
-    tag_authorized=true
-fi
-if [[ "${main_authorized}" != "true" && "${tag_authorized}" != "true" ]]; then
-    echo "The requested commit is neither reachable from origin/main nor authorized by its ECS release tag." >&2
-    exit 1
+
+if health_matches_sha "${release_sha}" 2; then
+    echo "Already deployed and verified ${release_sha}."
+    exit 0
 fi
 
 release_dir="/opt/linglingqi/releases/${release_sha}"
