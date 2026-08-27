@@ -1,6 +1,118 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
+snapshot_offline_bundle() (
+    local input_bundle_path="$1"
+    local input_checksum_path="$2"
+    local trusted_parent_dir="$3"
+    local expected_owner_uid="$4"
+    local bundle_snapshot_dir=""
+    local bundle_snapshot_path=""
+    local snapshot_checksum_path=""
+    local bundle_verification_repository=""
+
+    cleanup_snapshot() {
+        if [[ -n "${bundle_snapshot_dir}" && ! -L "${bundle_snapshot_dir}" && \
+            "${bundle_snapshot_dir}" == "${trusted_parent_dir}/bundle."* ]]; then
+            rm -rf -- "${bundle_snapshot_dir}"
+        fi
+    }
+    trap cleanup_snapshot EXIT
+
+    if [[ "$(basename -- "${input_bundle_path}")" != "source.bundle" ]]; then
+        echo "Offline deployment bundle must be named source.bundle." >&2
+        exit 1
+    fi
+    bundle_snapshot_dir="$(mktemp -d "${trusted_parent_dir}/bundle.XXXXXX")"
+    chmod 0700 "${bundle_snapshot_dir}"
+    bundle_snapshot_path="${bundle_snapshot_dir}/source.bundle"
+    snapshot_checksum_path="${bundle_snapshot_dir}/source.bundle.sha256"
+    if ! node - "${input_bundle_path}" "${input_checksum_path}" \
+        "${bundle_snapshot_path}" "${snapshot_checksum_path}" "${expected_owner_uid}" <<'NODE'
+const fs = require('node:fs');
+const [bundleInput, checksumInput, bundleSnapshot, checksumSnapshot, expectedOwner] = process.argv.slice(2);
+const noFollow = fs.constants.O_NOFOLLOW;
+if (typeof noFollow !== 'number') {
+    throw new Error('Offline deployment requires O_NOFOLLOW support');
+}
+
+function copyOpenedRegularFile(input, output) {
+    const inputFd = fs.openSync(input, fs.constants.O_RDONLY | noFollow);
+    try {
+        const inputStat = fs.fstatSync(inputFd);
+        if (!inputStat.isFile() || inputStat.uid !== Number(expectedOwner) || (inputStat.mode & 0o22) !== 0) {
+            throw new Error('Offline deployment assets must be regular, root-owned, and not group- or world-writable');
+        }
+        const outputFd = fs.openSync(output, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+        try {
+            const buffer = Buffer.allocUnsafe(64 * 1024);
+            for (;;) {
+                const bytesRead = fs.readSync(inputFd, buffer, 0, buffer.length, null);
+                if (bytesRead === 0) break;
+                let bytesWritten = 0;
+                while (bytesWritten < bytesRead) {
+                    bytesWritten += fs.writeSync(outputFd, buffer, bytesWritten, bytesRead - bytesWritten);
+                }
+            }
+            fs.fchmodSync(outputFd, 0o600);
+        } finally {
+            fs.closeSync(outputFd);
+        }
+    } finally {
+        fs.closeSync(inputFd);
+    }
+}
+
+copyOpenedRegularFile(bundleInput, bundleSnapshot);
+copyOpenedRegularFile(checksumInput, checksumSnapshot);
+NODE
+    then
+        exit 1
+    fi
+    if [[ "$(wc -l < "${snapshot_checksum_path}")" -ne 1 ]] || \
+        ! grep -qxE '[0-9a-f]{64}  source\.bundle' "${snapshot_checksum_path}"; then
+        echo "Offline deployment checksum must contain one SHA-256 entry for source.bundle." >&2
+        exit 1
+    fi
+    if ! (
+        cd -- "${bundle_snapshot_dir}"
+        sha256sum --check --status "${snapshot_checksum_path}"
+    ); then
+        exit 1
+    fi
+    bundle_verification_repository="${bundle_snapshot_dir}/verification.git"
+    if ! git init --bare --quiet "${bundle_verification_repository}" || \
+        ! git -C "${bundle_verification_repository}" bundle verify "${bundle_snapshot_path}" >&2; then
+        exit 1
+    fi
+    trap - EXIT
+    printf '%s\n' "${bundle_snapshot_dir}"
+)
+
+import_verified_offline_bundle() {
+    local target_repository="$1"
+    local verified_bundle_path="$2"
+    local requested_sha="$3"
+    local ecs_release_tag="$4"
+    local release_sha=""
+    local tag_sha=""
+
+    git -C "${target_repository}" fetch --force "${verified_bundle_path}" \
+        "+refs/tags/${ecs_release_tag}:refs/tags/${ecs_release_tag}"
+    if ! release_sha="$(git -C "${target_repository}" rev-parse --verify "${requested_sha}^{commit}" 2>/dev/null)" || \
+        ! tag_sha="$(git -C "${target_repository}" rev-parse --verify \
+            "refs/tags/${ecs_release_tag}^{commit}" 2>/dev/null)" || \
+        [[ "${release_sha}" != "${requested_sha}" || "${tag_sha}" != "${requested_sha}" ]]; then
+        echo "Offline bundle does not authorize the requested commit with its ECS release tag." >&2
+        return 1
+    fi
+    printf '%s\n' "${release_sha}"
+}
+
+if [[ "${LINGLINGQI_DEPLOY_LIBRARY_ONLY:-}" == "true" && "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
+
 if [[ "$(id -u)" != "0" ]]; then
     echo "This deployment script must run as root." >&2
     exit 1
@@ -43,7 +155,6 @@ deployment_lock_file="/run/lock/linglingqi/deploy.lock"
 deployment_lock_fd=""
 environment_temp=""
 bundle_snapshot_dir=""
-bundle_verification_repository=""
 next_link_created=false
 rollback_link_created=false
 
@@ -87,47 +198,9 @@ if ! flock --exclusive --timeout 30 "${deployment_lock_fd}"; then
 fi
 
 if [[ "${source_mode}" == "bundle" ]]; then
-    for asset_path in "${bundle_path}" "${checksum_path}"; do
-        if [[ -L "${asset_path}" || ! -f "${asset_path}" ]]; then
-            echo "Offline deployment assets must be regular, non-symlink files." >&2
-            exit 1
-        fi
-        if [[ "$(stat -c '%u' "${asset_path}")" != "0" ]]; then
-            echo "Offline deployment assets must be owned by root." >&2
-            exit 1
-        fi
-        asset_mode="$(stat -c '%a' "${asset_path}")"
-        if (( (8#${asset_mode} & 0022) != 0 )); then
-            echo "Offline deployment assets must not be group- or world-writable." >&2
-            exit 1
-        fi
-    done
-    if [[ "$(basename -- "${bundle_path}")" != "source.bundle" ]]; then
-        echo "Offline deployment bundle must be named source.bundle." >&2
-        exit 1
-    fi
-    bundle_snapshot_dir="$(mktemp -d "${deployment_lock_dir}/bundle.XXXXXX")"
-    chown root:root "${bundle_snapshot_dir}"
-    chmod 0700 "${bundle_snapshot_dir}"
-    bundle_snapshot_path="${bundle_snapshot_dir}/source.bundle"
-    snapshot_checksum_path="${bundle_snapshot_dir}/source.bundle.sha256"
-    cp -- "${bundle_path}" "${bundle_snapshot_path}"
-    cp -- "${checksum_path}" "${snapshot_checksum_path}"
-    chown root:root "${bundle_snapshot_path}" "${snapshot_checksum_path}"
-    chmod 0600 "${bundle_snapshot_path}" "${snapshot_checksum_path}"
-    if [[ "$(wc -l < "${snapshot_checksum_path}")" -ne 1 ]] || \
-        ! grep -qxE '[0-9a-f]{64}  source\.bundle' "${snapshot_checksum_path}"; then
-        echo "Offline deployment checksum must contain one SHA-256 entry for source.bundle." >&2
-        exit 1
-    fi
-    (
-        cd -- "${bundle_snapshot_dir}"
-        sha256sum --check --status "${snapshot_checksum_path}"
-    )
-    bundle_verification_repository="${bundle_snapshot_dir}/verification.git"
-    git init --bare --quiet "${bundle_verification_repository}"
-    git -C "${bundle_verification_repository}" bundle verify "${bundle_snapshot_path}"
-    bundle_path="${bundle_snapshot_path}"
+    bundle_snapshot_dir="$(snapshot_offline_bundle "${bundle_path}" "${checksum_path}" \
+        "${deployment_lock_dir}" "0")"
+    bundle_path="${bundle_snapshot_dir}/source.bundle"
 fi
 
 if [[ ! -f "${environment_file}" || -L "${environment_file}" ]]; then
@@ -254,15 +327,8 @@ if [[ "${source_mode}" == "online" ]]; then
         exit 1
     fi
 else
-    git -C "${repository_dir}" fetch --force "${bundle_path}" \
-        "+refs/tags/${ecs_release_tag}:refs/tags/${ecs_release_tag}"
-    if ! release_sha="$(git -C "${repository_dir}" rev-parse --verify "${requested_sha}^{commit}" 2>/dev/null)" || \
-        ! tag_sha="$(git -C "${repository_dir}" rev-parse --verify \
-            "refs/tags/${ecs_release_tag}^{commit}" 2>/dev/null)" || \
-        [[ "${release_sha}" != "${requested_sha}" || "${tag_sha}" != "${requested_sha}" ]]; then
-        echo "Offline bundle does not authorize the requested commit with its ECS release tag." >&2
-        exit 1
-    fi
+    release_sha="$(import_verified_offline_bundle "${repository_dir}" "${bundle_path}" \
+        "${requested_sha}" "${ecs_release_tag}")"
 fi
 
 if health_matches_sha "${release_sha}" 2; then

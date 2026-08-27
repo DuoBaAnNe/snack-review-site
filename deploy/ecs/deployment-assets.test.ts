@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { constants, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
@@ -79,7 +79,7 @@ test('deploy accepts only a verified offline bundle under the deployment lock', 
     assert.match(deploy, /sha256sum --check/);
     assert.match(deploy, /git -C "\$\{bundle_verification_repository\}" bundle verify/);
     assert.match(deploy, /ecs-release-\$\{requested_sha\}/);
-    assertBefore(deploy, 'flock --exclusive --timeout 30', 'sha256sum --check');
+    assertBefore(deploy, 'flock --exclusive --timeout 30', 'snapshot_offline_bundle "${bundle_path}"');
     assertBefore(deploy, 'sha256sum --check', 'fetch --force');
 });
 
@@ -91,17 +91,29 @@ test('offline deployment rejects short or uppercase commit identifiers', () => {
 test('offline deployment never fetches GitHub', () => {
     const deploy = read('deploy/ecs/deploy.sh');
     assert.match(deploy, /if \[\[ "\$\{source_mode\}" == "online" \]\]/);
-    assert.match(deploy, /else[\s\S]*git -C "\$\{bundle_verification_repository\}" bundle verify/);
+    assert.match(deploy, /else[\s\S]*import_verified_offline_bundle/);
 });
 
-test('offline bundle validation snapshots an ordinary artifact before local verification and import', () => {
+test('offline bundle validation snapshots an ordinary artifact before local verification and import', (t) => {
     const deploy = read('deploy/ecs/deploy.sh');
-    assert.match(deploy, /bundle_snapshot_dir=/);
-    assert.match(deploy, /git -C "\$\{bundle_verification_repository\}" bundle verify/);
+    assert.match(deploy, /snapshot_offline_bundle\(\)/);
+    assert.match(deploy, /import_verified_offline_bundle\(\)/);
+    assert.match(deploy, /O_NOFOLLOW/);
 
-    const bash = process.platform === 'win32' ? 'D:\\Git\\bin\\bash.exe' : 'bash';
+    const bash = process.env.BASH ?? 'bash';
+    const bashProbe = spawnSync(bash, ['--version'], { encoding: 'utf8' });
+    if (bashProbe.error || bashProbe.status !== 0) {
+        t.skip('Bash is unavailable on PATH');
+        return;
+    }
+    if (typeof constants.O_NOFOLLOW !== 'number') {
+        t.skip('the runtime lacks O_NOFOLLOW support');
+        return;
+    }
     const command = [
         'set -Eeuo pipefail',
+        'export LINGLINGQI_DEPLOY_LIBRARY_ONLY=true',
+        'source "$1"',
         'temp_dir="$(mktemp -d)"',
         'cleanup() { rm -rf -- "${temp_dir}"; }',
         'trap cleanup EXIT',
@@ -113,19 +125,15 @@ test('offline bundle validation snapshots an ordinary artifact before local veri
         'mkdir "${temp_dir}/artifacts"',
         'git -C "${temp_dir}/source" bundle create "${temp_dir}/artifacts/source.bundle" "refs/tags/${ecs_release_tag}"',
         '(cd "${temp_dir}/artifacts" && sha256sum source.bundle > source.bundle.sha256)',
-        'mkdir "${temp_dir}/snapshot"',
-        'cp -- "${temp_dir}/artifacts/source.bundle" "${temp_dir}/snapshot/source.bundle"',
-        'cp -- "${temp_dir}/artifacts/source.bundle.sha256" "${temp_dir}/snapshot/source.bundle.sha256"',
-        '(cd "${temp_dir}/snapshot" && sha256sum --check --status source.bundle.sha256)',
-        'git init --bare -q "${temp_dir}/verification.git"',
-        'git -C "${temp_dir}/verification.git" bundle verify "${temp_dir}/snapshot/source.bundle"',
+        'mkdir "${temp_dir}/trusted"',
+        'bundle_snapshot_dir="$(snapshot_offline_bundle "${temp_dir}/artifacts/source.bundle" "${temp_dir}/artifacts/source.bundle.sha256" "${temp_dir}/trusted" "$(id -u)")"',
+        '[[ "${bundle_snapshot_dir}" == "${temp_dir}/trusted/bundle."* ]]',
         'git init --bare -q "${temp_dir}/repository.git"',
-        'git -C "${temp_dir}/repository.git" fetch --force "${temp_dir}/snapshot/source.bundle" "+refs/tags/${ecs_release_tag}:refs/tags/${ecs_release_tag}"',
-        'release_sha="$(git -C "${temp_dir}/repository.git" rev-parse --verify "${requested_sha}^{commit}")"',
+        'release_sha="$(import_verified_offline_bundle "${temp_dir}/repository.git" "${bundle_snapshot_dir}/source.bundle" "${requested_sha}" "${ecs_release_tag}")"',
         'tag_sha="$(git -C "${temp_dir}/repository.git" rev-parse --verify "refs/tags/${ecs_release_tag}^{commit}")"',
         '[[ "${release_sha}" == "${requested_sha}" && "${tag_sha}" == "${requested_sha}" ]]',
     ].join('\n');
-    const result = spawnSync(bash, ['-lc', command], { encoding: 'utf8' });
+    const result = spawnSync(bash, ['-lc', command, 'bash', 'deploy/ecs/deploy.sh'], { encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
 });
 
