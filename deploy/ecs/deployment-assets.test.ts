@@ -80,6 +80,13 @@ test('deploy rejects an untrusted bare repository before fetching', () => {
     assertBefore(deploy, 'remote get-url origin', 'fetch --force --prune origin');
 });
 
+test('deploy accepts a dedicated ECS release tag without requiring origin main', () => {
+    const deploy = read('deploy/ecs/deploy.sh');
+    assert.match(deploy, /ecs-release-\$\{requested_sha\}/);
+    assert.match(deploy, /refs\/tags\/\$\{ecs_release_tag\}/);
+    assert.match(deploy, /The requested commit is neither reachable from origin\/main nor authorized by its ECS release tag/);
+});
+
 test('certificate installer reloads an active Nginx service', () => {
     const certificate = read('deploy/ecs/install-certificate.sh');
     assert.match(certificate, /LINGLINGQI_CERTIFICATE_DESTINATION_DIR/);

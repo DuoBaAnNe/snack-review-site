@@ -15,6 +15,7 @@ if [[ ! "${requested_sha}" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
     echo "The Git SHA must contain 7 to 40 hexadecimal characters." >&2
     exit 1
 fi
+ecs_release_tag="ecs-release-${requested_sha}"
 
 repository_url="https://github.com/DuoBaAnNe/snack-review-site.git"
 repository_dir="/opt/linglingqi/repository.git"
@@ -162,14 +163,26 @@ if [[ "${actual_repository_url}" != "${repository_url}" ]]; then
 fi
 git -C "${repository_dir}" fetch --force --prune origin \
     '+refs/heads/main:refs/remotes/origin/main'
+git -C "${repository_dir}" fetch --force origin \
+    "+refs/tags/${ecs_release_tag}:refs/tags/${ecs_release_tag}" 2>/dev/null || true
 
 if ! release_sha="$(git -C "${repository_dir}" rev-parse --verify "${requested_sha}^{commit}" 2>/dev/null)"; then
     echo "The requested SHA does not resolve to a fetched commit." >&2
     exit 1
 fi
-if ! git -C "${repository_dir}" merge-base --is-ancestor \
+main_authorized=false
+tag_authorized=false
+if git -C "${repository_dir}" merge-base --is-ancestor \
     "${release_sha}" refs/remotes/origin/main; then
-    echo "The requested commit is not reachable from origin/main." >&2
+    main_authorized=true
+fi
+if ecs_tag_sha="$(git -C "${repository_dir}" rev-parse --verify \
+    "refs/tags/${ecs_release_tag}^{commit}" 2>/dev/null)" && \
+    [[ "${ecs_tag_sha}" == "${release_sha}" ]]; then
+    tag_authorized=true
+fi
+if [[ "${main_authorized}" != "true" && "${tag_authorized}" != "true" ]]; then
+    echo "The requested commit is neither reachable from origin/main nor authorized by its ECS release tag." >&2
     exit 1
 fi
 

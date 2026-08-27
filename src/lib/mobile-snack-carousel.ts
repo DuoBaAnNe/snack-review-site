@@ -1,7 +1,10 @@
 export const MOBILE_SNACKS_PER_ROW = 10;
 export const MOBILE_VISIBLE_CARD_SLOTS = 4.3;
 export const MOBILE_DRAG_THRESHOLD_PX = 8;
-export const MOBILE_SNACK_RAIN_DELAY_MS = 3000;
+import {
+    DEFAULT_SNACK_RAIN_DELAY_MS,
+    isSnackRainReady,
+} from './snack-rain-timing';
 
 export function chunkMobileSnackRows<T>(items: T[]): T[][] {
     const rows: T[][] = [];
@@ -45,8 +48,12 @@ export function isCarouselDrag(distancePx: number): boolean {
     return Math.abs(distancePx) >= MOBILE_DRAG_THRESHOLD_PX;
 }
 
-export function isMobileSnackRainReady(elapsedMs: number, isDragging: boolean): boolean {
-    return !isDragging && elapsedMs >= MOBILE_SNACK_RAIN_DELAY_MS;
+export function isMobileSnackRainReady(
+    elapsedMs: number,
+    isDragging: boolean,
+    delayMs = DEFAULT_SNACK_RAIN_DELAY_MS,
+): boolean {
+    return !isDragging && isSnackRainReady(elapsedMs, delayMs);
 }
 
 export function getMobileRainStartTop(dropSize: number): number {

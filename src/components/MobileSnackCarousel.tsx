@@ -10,7 +10,6 @@ import {
     getMobileStackScale,
     getReleasedCarouselIndex,
     isCarouselDrag,
-    MOBILE_SNACK_RAIN_DELAY_MS,
     MOBILE_VISIBLE_CARD_SLOTS,
     normalizeCarouselIndex,
 } from '@/lib/mobile-snack-carousel';
@@ -18,6 +17,7 @@ import {
 interface Props {
     snacks: Snack[];
     rowIndex: number;
+    rainDelayMs: number;
     onOpen: (snack: Snack) => void;
 }
 
@@ -65,7 +65,7 @@ function makeMobileRain(): MobileDrop[] {
     });
 }
 
-export default function MobileSnackCarousel({ snacks, rowIndex, onOpen }: Props) {
+export default function MobileSnackCarousel({ snacks, rowIndex, rainDelayMs, onOpen }: Props) {
     const viewportRef = useRef<HTMLDivElement>(null);
     const pointerIdRef = useRef<number | null>(null);
     const startPointRef = useRef({ x: 0, y: 0 });
@@ -101,10 +101,10 @@ export default function MobileSnackCarousel({ snacks, rowIndex, onOpen }: Props)
         if (isDragging || displaySnacks.length === 0) return;
         const timer = window.setTimeout(
             () => setRainForIndex(activeIndex),
-            MOBILE_SNACK_RAIN_DELAY_MS,
+            rainDelayMs,
         );
         return () => window.clearTimeout(timer);
-    }, [activeIndex, displaySnacks.length, isDragging]);
+    }, [activeIndex, displaySnacks.length, isDragging, rainDelayMs]);
 
     if (displaySnacks.length === 0) return null;
 
@@ -241,7 +241,7 @@ export default function MobileSnackCarousel({ snacks, rowIndex, onOpen }: Props)
                         <span className={`absolute inset-0 ${isFocused ? 'bg-black/15' : 'bg-black/32'}`} />
                         {isRaining && cover && (
                             <span
-                                className="mobile-snack-rain-layer pointer-events-none absolute inset-0 z-[5] overflow-hidden"
+                                className="snack-rain-layer mobile-snack-rain-layer pointer-events-none absolute inset-0 z-[5] overflow-hidden"
                                 aria-hidden="true"
                                 style={{ background: MOBILE_RAIN_BACKGROUNDS[snack.id % MOBILE_RAIN_BACKGROUNDS.length] }}
                             >

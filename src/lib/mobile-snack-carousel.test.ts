@@ -49,10 +49,12 @@ test('small finger movement remains a tap while a deliberate swipe suppresses th
     assert.equal(isCarouselDrag(-24), true);
 });
 
-test('focused mobile snack starts raining only after three idle seconds', () => {
-    assert.equal(isMobileSnackRainReady(2999, false), false);
-    assert.equal(isMobileSnackRainReady(3000, false), true);
-    assert.equal(isMobileSnackRainReady(5000, true), false);
+test('focused mobile snack uses the selected comparison delay and pauses while dragging', () => {
+    assert.equal(isMobileSnackRainReady(1499, false, 1500), false);
+    assert.equal(isMobileSnackRainReady(1500, false, 1500), true);
+    assert.equal(isMobileSnackRainReady(1999, false, 2000), false);
+    assert.equal(isMobileSnackRainReady(2000, false, 2000), true);
+    assert.equal(isMobileSnackRainReady(5000, true, 1500), false);
 });
 
 test('every mobile rain drop starts completely above the card edge', () => {

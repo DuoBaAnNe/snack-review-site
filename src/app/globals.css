@@ -73,7 +73,7 @@ body {
     }
 }
 
-@keyframes mobile-snack-rain-reveal {
+@keyframes snack-rain-reveal {
     from {
         opacity: 0;
     }
@@ -82,8 +82,8 @@ body {
     }
 }
 
-.mobile-snack-rain-layer {
-    animation: mobile-snack-rain-reveal 500ms ease-out both;
+.snack-rain-layer {
+    animation: snack-rain-reveal 500ms ease-out both;
 }
 
 /* Respect the user's reduced-motion system setting */
@@ -98,7 +98,7 @@ body {
         display: none;
     }
 
-    .mobile-snack-rain-layer {
+    .snack-rain-layer {
         animation: none;
     }
 }

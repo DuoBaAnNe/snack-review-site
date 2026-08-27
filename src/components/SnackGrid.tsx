@@ -7,6 +7,12 @@ import MobileSnackCarousel from './MobileSnackCarousel';
 import { getImageUrl } from '@/lib/image-url';
 import { paginateSnackItems, SNACKS_PER_ROW } from '@/lib/snack-pagination';
 import { chunkMobileSnackRows } from '@/lib/mobile-snack-carousel';
+import {
+    DEFAULT_SNACK_RAIN_DELAY_MS,
+    getStaggeredRainDelay,
+    RAIN_DELAY_OPTIONS_MS,
+    type SnackRainDelayMs,
+} from '@/lib/snack-rain-timing';
 
 const ANIM = 260;
 
@@ -65,7 +71,7 @@ function pickSize(rnd: () => number): number {
 
 function makeRain(): Drop[] {
     const count = 12 + Math.floor(Math.random() * 4); // 12–15 drops (~10% over the live 11–14)
-    return Array.from({ length: count }, () => {
+    return Array.from({ length: count }, (_, index) => {
         const size = pickSize(Math.random);
         const giant = size > 300;
         // Constant speed per drop, but a WIDE range so the drops never fall as
@@ -80,7 +86,7 @@ function makeRain(): Drop[] {
             // as the first drops leave the bottom, later ones are still coming
             // in — a continuous stream, no batch-then-gap. Never negative, so
             // nothing ever pops in mid-air.
-            delay: Math.random() * 2.2,
+            delay: getStaggeredRainDelay(index, Math.random() * 2.2),
             // Half spin clockwise, half counter-clockwise; giants barely tumble
             spin: (Math.random() < 0.5 ? -1 : 1) * Math.round(giant ? 30 + Math.random() * 50 : 120 + Math.random() * 260),
         };
@@ -100,10 +106,12 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
     const pendingPageChangeRef = useRef(false);
     const [width, setWidth] = useState(0);
     const [hoverId, setHoverId] = useState<number | null>(null);
+    const [rainId, setRainId] = useState<number | null>(null);
+    const [rainDelayMs, setRainDelayMs] = useState<SnackRainDelayMs>(DEFAULT_SNACK_RAIN_DELAY_MS);
     // Fresh random rain per hover — recomputed only when the hovered card
     // changes, so it stays stable while you hover one card but differs every
     // time you hover (in/out counts as a change since hoverId passes null).
-    const rain = useMemo(() => (hoverId == null ? [] : makeRain()), [hoverId]);
+    const rain = useMemo(() => (rainId == null ? [] : makeRain()), [rainId]);
     const [selByRow, setSelByRow] = useState<Record<number, number>>({}); // per-row sticky focus (snack id) after a click
     const SLIDE_STEP = 18; // how far the row slides per card when the focus jumps (px)
     const [page, setPage] = useState(1);
@@ -116,6 +124,12 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
     const [active, setActive] = useState<Snack | null>(null);
     const [visible, setVisible] = useState(false);
     const unmountTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        if (hoverId == null || active) return;
+        const timer = window.setTimeout(() => setRainId(hoverId), rainDelayMs);
+        return () => window.clearTimeout(timer);
+    }, [active, hoverId, rainDelayMs]);
 
     // Measure the content width so the row spans edge to edge
     useEffect(() => {
@@ -132,6 +146,7 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setPage(1);
         setHoverId(null);
+        setRainId(null);
         setSelByRow({});
     }, [snacks]);
 
@@ -145,6 +160,7 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
         // Clear hover so the clicked card (per-row memory) keeps the peak
         // after the popup closes, instead of whatever sits under the cursor.
         setHoverId(null);
+        setRainId(null);
         if (unmountTimer.current) clearTimeout(unmountTimer.current);
         unmountTimer.current = setTimeout(() => setActive(null), ANIM);
     }, []);
@@ -156,6 +172,7 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
         pendingPageChangeRef.current = true;
         setPage(nextPage);
         setHoverId(null);
+        setRainId(null);
         setSelByRow({});
     }, [currentPage, totalPages]);
 
@@ -203,12 +220,36 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                 aria-label={`第 ${currentPage} 页零食列表，共 ${totalPages} 页`}
                 className="w-full outline-none"
             >
+                {process.env.NODE_ENV === 'development' && (
+                    <div className="mb-3 flex items-center justify-end gap-2 px-2 text-xs text-gray-500">
+                        <span>本地飘落延迟</span>
+                        {RAIN_DELAY_OPTIONS_MS.map((delay) => (
+                            <button
+                                key={delay}
+                                type="button"
+                                aria-pressed={rainDelayMs === delay}
+                                onClick={() => {
+                                    setRainId(null);
+                                    setRainDelayMs(delay);
+                                }}
+                                className={`rounded-full border px-3 py-1 font-semibold transition-colors ${
+                                    rainDelayMs === delay
+                                        ? 'border-orange-400 bg-orange-500 text-white'
+                                        : 'border-gray-200 bg-white text-gray-600 hover:border-orange-300 hover:text-orange-500'
+                                }`}
+                            >
+                                {delay / 1000}秒
+                            </button>
+                        ))}
+                    </div>
+                )}
                 <div className="flex flex-col gap-5 md:hidden">
                     {mobileRows.map((row, rowIndex) => (
                         <MobileSnackCarousel
-                            key={`${currentPage}-${rowIndex}-${row.map((snack) => snack.id).join('-')}`}
+                            key={`${currentPage}-${rowIndex}-${rainDelayMs}-${row.map((snack) => snack.id).join('-')}`}
                             snacks={row}
                             rowIndex={rowIndex}
+                            rainDelayMs={rainDelayMs}
                             onOpen={openCard}
                         />
                     ))}
@@ -248,14 +289,24 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                                 const cover = snack.images[0];
                                 const label = snack.brand_name || snack.product_name;
                                 const isFocus = dist === 0 && hoverCol >= 0;
+                                const isRaining = isFocus && rainId === snack.id;
                                 return (
                                     <div
                                         key={snack.id}
-                                        onMouseEnter={() => { if (!active) setHoverId(snack.id); }}
-                                        onMouseLeave={() => setHoverId((h) => (h === snack.id ? null : h))}
+                                        onMouseEnter={() => {
+                                            if (!active) {
+                                                setRainId(null);
+                                                setHoverId(snack.id);
+                                            }
+                                        }}
+                                        onMouseLeave={() => {
+                                            setRainId(null);
+                                            setHoverId((h) => (h === snack.id ? null : h));
+                                        }}
                                         onClick={() => {
                                             setSelByRow((m) => ({ ...m, [r]: snack.id }));
                                             setHoverId(null); // hand the peak to the per-row click memory
+                                            setRainId(null);
                                             openCard(snack);
                                         }}
                                         className="absolute top-1/2 cursor-pointer transition-transform duration-300 ease-out will-change-transform"
@@ -275,9 +326,9 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                                             )}
                                             <div className={`absolute inset-0 transition-colors duration-300 ${isFocus ? 'bg-black/12' : 'bg-black/30'}`} />
                                             {/* Snack rain — endless falling copies of this snack on a pretty backdrop */}
-                                            {isFocus && cover && (
+                                            {isRaining && cover && (
                                                 <div
-                                                    className="absolute inset-0"
+                                                    className="snack-rain-layer absolute inset-0"
                                                     style={{ background: RAIN_BG[snack.id % RAIN_BG.length] }}
                                                 >
                                                     {rain.map((d, i) => (
