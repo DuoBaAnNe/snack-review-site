@@ -42,6 +42,8 @@ deployment_lock_dir="/run/lock/linglingqi"
 deployment_lock_file="/run/lock/linglingqi/deploy.lock"
 deployment_lock_fd=""
 environment_temp=""
+bundle_snapshot_dir=""
+bundle_verification_repository=""
 next_link_created=false
 rollback_link_created=false
 
@@ -54,6 +56,10 @@ cleanup() {
     fi
     if [[ "${rollback_link_created}" == "true" && -L "${rollback_link}" ]]; then
         rm -f -- "${rollback_link}"
+    fi
+    if [[ -n "${bundle_snapshot_dir}" && ! -L "${bundle_snapshot_dir}" && \
+        "${bundle_snapshot_dir}" == "${deployment_lock_dir}/bundle."* ]]; then
+        rm -rf -- "${bundle_snapshot_dir}"
     fi
 }
 trap cleanup EXIT
@@ -90,25 +96,38 @@ if [[ "${source_mode}" == "bundle" ]]; then
             echo "Offline deployment assets must be owned by root." >&2
             exit 1
         fi
+        asset_mode="$(stat -c '%a' "${asset_path}")"
+        if (( (8#${asset_mode} & 0022) != 0 )); then
+            echo "Offline deployment assets must not be group- or world-writable." >&2
+            exit 1
+        fi
     done
     if [[ "$(basename -- "${bundle_path}")" != "source.bundle" ]]; then
         echo "Offline deployment bundle must be named source.bundle." >&2
         exit 1
     fi
-    if [[ "$(wc -l < "${checksum_path}")" -ne 1 ]] || \
-        ! grep -qxE '[0-9a-f]{64}  source\.bundle' "${checksum_path}"; then
+    bundle_snapshot_dir="$(mktemp -d "${deployment_lock_dir}/bundle.XXXXXX")"
+    chown root:root "${bundle_snapshot_dir}"
+    chmod 0700 "${bundle_snapshot_dir}"
+    bundle_snapshot_path="${bundle_snapshot_dir}/source.bundle"
+    snapshot_checksum_path="${bundle_snapshot_dir}/source.bundle.sha256"
+    cp -- "${bundle_path}" "${bundle_snapshot_path}"
+    cp -- "${checksum_path}" "${snapshot_checksum_path}"
+    chown root:root "${bundle_snapshot_path}" "${snapshot_checksum_path}"
+    chmod 0600 "${bundle_snapshot_path}" "${snapshot_checksum_path}"
+    if [[ "$(wc -l < "${snapshot_checksum_path}")" -ne 1 ]] || \
+        ! grep -qxE '[0-9a-f]{64}  source\.bundle' "${snapshot_checksum_path}"; then
         echo "Offline deployment checksum must contain one SHA-256 entry for source.bundle." >&2
         exit 1
     fi
-    bundle_dir="$(cd -- "$(dirname -- "${bundle_path}")" && pwd -P)"
-    checksum_dir="$(cd -- "$(dirname -- "${checksum_path}")" && pwd -P)"
-    bundle_path="${bundle_dir}/source.bundle"
-    checksum_path="${checksum_dir}/$(basename -- "${checksum_path}")"
     (
-        cd -- "${bundle_dir}"
-        sha256sum --check --status "${checksum_path}"
-        git bundle verify "${bundle_path}"
+        cd -- "${bundle_snapshot_dir}"
+        sha256sum --check --status "${snapshot_checksum_path}"
     )
+    bundle_verification_repository="${bundle_snapshot_dir}/verification.git"
+    git init --bare --quiet "${bundle_verification_repository}"
+    git -C "${bundle_verification_repository}" bundle verify "${bundle_snapshot_path}"
+    bundle_path="${bundle_snapshot_path}"
 fi
 
 if [[ ! -f "${environment_file}" || -L "${environment_file}" ]]; then
