@@ -3,8 +3,10 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { Snack } from '@/types';
 import SnackCard from './SnackCard';
+import MobileSnackCarousel from './MobileSnackCarousel';
 import { getImageUrl } from '@/lib/image-url';
 import { paginateSnackItems, SNACKS_PER_ROW } from '@/lib/snack-pagination';
+import { chunkMobileSnackRows } from '@/lib/mobile-snack-carousel';
 
 const ANIM = 260;
 
@@ -184,6 +186,7 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
     }
 
     const rows = chunk(pageItems, SNACKS_PER_ROW);
+    const mobileRows = chunkMobileSnackRows(pageItems);
     const slot = width > 0 ? width / SNACKS_PER_ROW : 0;
     const CARD = Math.min(slot * 1.6, 432);    // +20% again — heavier overlap, bigger cards
     const peakScale = 1.1;
@@ -193,13 +196,26 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
 
     return (
         <>
-            {/* Full content width; overflow visible so scaled cards are never clipped */}
+            {/* Mobile: ten unique snacks per manually controlled, infinitely connected row. */}
             <div
                 ref={wrapRef}
                 tabIndex={-1}
                 aria-label={`第 ${currentPage} 页零食列表，共 ${totalPages} 页`}
-                className="w-full flex flex-col gap-8 outline-none"
+                className="w-full outline-none"
             >
+                <div className="flex flex-col gap-5 md:hidden">
+                    {mobileRows.map((row, rowIndex) => (
+                        <MobileSnackCarousel
+                            key={`${currentPage}-${rowIndex}-${row.map((snack) => snack.id).join('-')}`}
+                            snacks={row}
+                            rowIndex={rowIndex}
+                            onOpen={openCard}
+                        />
+                    ))}
+                </div>
+
+                {/* Desktop: preserve the original five-card stacked rows and hover behavior. */}
+                <div className="hidden flex-col gap-8 md:flex">
                 {width > 0 && rows.map((row, r) => {
                     const n = row.length;
                     const rowW = n * slot;
@@ -338,6 +354,7 @@ export default function SnackGrid({ snacks, isAdmin }: { snacks: Snack[]; isAdmi
                         </div>
                     );
                 })}
+                </div>
             </div>
 
             {totalPages > 1 && (

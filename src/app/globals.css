@@ -73,11 +73,32 @@ body {
     }
 }
 
+@keyframes mobile-snack-rain-reveal {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.mobile-snack-rain-layer {
+    animation: mobile-snack-rain-reveal 500ms ease-out both;
+}
+
 /* Respect the user's reduced-motion system setting */
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
         animation-duration: 0.01ms !important;
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
+    }
+
+    .mobile-snack-rain-drop {
+        display: none;
+    }
+
+    .mobile-snack-rain-layer {
+        animation: none;
     }
 }

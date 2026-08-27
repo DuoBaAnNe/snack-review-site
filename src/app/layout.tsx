@@ -3,6 +3,7 @@ import "./globals.css";
 import Banner from "@/components/Banner";
 import HeaderButtons from "@/components/HeaderButtons";
 import Footer from "@/components/Footer";
+import BackToTopButton from "@/components/BackToTopButton";
 
 export const metadata: Metadata = {
     title: "七零十 -- 挑战测评10000款零食",
@@ -25,6 +26,7 @@ export default function RootLayout({
                     {children}
                 </main>
                 <Footer />
+                <BackToTopButton />
             </body>
         </html>
     );

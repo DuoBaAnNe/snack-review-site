@@ -27,6 +27,7 @@ function parseTitle(raw: string): { cat: string | null; title: string } {
 const MAX_ROWS = 6;
 const COLS = 3;               // lg grid columns
 const MAX_SHOWN = MAX_ROWS * COLS; // at most 6 rows
+const MAX_MOBILE_SHOWN = 10;
 
 export function scrollToNewsSection(listElement: HTMLElement | null) {
     const scrollTarget = listElement?.closest<HTMLElement>('#sec-news') ?? listElement;
@@ -54,6 +55,7 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
     const matched = filter ? news.filter((n) => parseTitle(n.title).cat === filter) : news;
     const shown = showAll ? matched : matched.slice(0, MAX_SHOWN);
     const hasMore = matched.length > MAX_SHOWN;
+    const hasMoreOnMobile = matched.length > MAX_MOBILE_SHOWN;
 
     function toggle(id: number) {
         setExpanded((prev) => {
@@ -107,7 +109,7 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
             )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
-                {shown.map((item) => {
+                {shown.map((item, index) => {
                     const { cat, title } = parseTitle(item.title);
                     const meta = (cat && CATEGORIES[cat]) || FALLBACK;
                     const isExp = expanded.has(item.id);
@@ -115,7 +117,9 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
                     return (
                         <article
                             key={item.id}
-                            className="group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all flex flex-col"
+                            className={`group bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-lg hover:-translate-y-0.5 transition-all flex-col ${
+                                !showAll && index >= MAX_MOBILE_SHOWN ? 'hidden md:flex' : 'flex'
+                            }`}
                         >
                             {/* Cover */}
                             <div
@@ -163,8 +167,8 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
                 })}
             </div>
 
-            {showAll && hasMore && (
-                <div className="fixed bottom-5 right-5 z-30 md:sticky md:bottom-6 md:float-right md:mt-6 md:ml-auto md:w-fit">
+            {showAll && hasMoreOnMobile && (
+                <div className="fixed bottom-20 right-5 z-30 md:sticky md:bottom-6 md:float-right md:mt-6 md:ml-auto md:w-fit">
                     <button
                         onClick={collapseNews}
                         aria-label="收起资讯列表"
@@ -175,8 +179,8 @@ export default function NewsList({ news }: { news: NewsItem[] }) {
                 </div>
             )}
 
-            {hasMore && !showAll && (
-                <div className="text-center mt-6">
+            {hasMoreOnMobile && !showAll && (
+                <div className={`text-center mt-6 ${hasMore ? '' : 'md:hidden'}`}>
                     <button
                         onClick={() => setShowAll(true)}
                         className="px-5 py-2 rounded-full border border-gray-200 text-sm text-gray-600 hover:border-orange-300 hover:text-orange-500 transition-colors"

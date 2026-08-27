@@ -48,6 +48,21 @@ equal(html.includes('aria-label="零食分页"'), true, 'more than 40 snacks ren
 equal(html.includes('aria-current="page" aria-label="第 1 页"'), true, 'the initial page is exposed as the current page');
 equal(html.includes('aria-label="第 1 页零食列表，共 2 页"'), true, 'the rendered snack grid is a labelled focus target');
 equal(html.includes('tabindex="-1"'), true, 'the snack grid can receive programmatic focus without joining tab order');
+equal(
+    html.includes('aria-label="手机端第 1 排零食卡片，10 款，可无限循环"'),
+    true,
+    'the mobile layout exposes ten snacks as one infinite carousel row',
+);
+equal(
+    html.includes('aria-label="手机端第 4 排零食卡片，10 款，可无限循环"'),
+    true,
+    'forty snacks render as four mobile carousel rows',
+);
+equal(
+    html.includes('aria-label="手机端第 5 排零食卡片'),
+    false,
+    'the first forty-snack page does not create a fifth mobile row',
+);
 
 type CommitPageChange = (
     focusTarget: { focus(options: FocusOptions): void } | null,

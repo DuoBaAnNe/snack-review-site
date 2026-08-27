@@ -9,7 +9,7 @@
     "lint": "eslint",
     "test:detail-navigation": "npx --yes tsx@4.23.12 --test src/lib/snack-detail-navigation.test.ts src/components/HamburgerHoverColor.test.ts",
     "test:map-panel": "npx --yes tsx@4.23.12 --test src/components/SnackMapView.position.test.ts",
-    "test:pagination": "npx --yes tsx@4.23.12 --test src/lib/snack-pagination.test.ts src/components/SnackGrid.pagination.test.ts src/components/NewsList.collapse.test.ts",
+    "test:pagination": "npx --yes tsx@4.23.12 --test src/lib/snack-pagination.test.ts src/lib/mobile-snack-carousel.test.ts src/lib/back-to-top.test.ts src/components/SnackGrid.pagination.test.ts src/components/NewsList.collapse.test.ts src/components/NewsList.responsive.test.ts",
     "test:deployment": "npx --yes tsx@4.23.12 --test src/components/Footer.icp.test.ts src/lib/health.test.ts deploy/ecs/deployment-assets.test.ts deploy/ecs/install-certificate.integration.test.ts"
   },
   "dependencies": {
