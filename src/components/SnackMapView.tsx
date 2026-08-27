@@ -10,6 +10,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import type { Snack } from '@/types';
 import { detectProvince } from '@/lib/provinces';
 import { getMapPanelPosition, type MapPanelPosition } from './snack-map-panel-position';
+import { shouldClearMapHoverPanel } from './snack-map-hover';
 
 echarts.use([MapChart, GeoComponent, TooltipComponent, CanvasRenderer]);
 
@@ -246,7 +247,7 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
         chart.setOption(option);
         const container = containerRef.current;
 
-        // ECharts mousemove: fires on BOTH provinces AND empty areas for map series
+        // ECharts series events fire only while the pointer is over a rendered region.
         chart.on('mousemove', (params: any) => {
             if (params.data?.snacks && params.data.snacks.length > 0) {
                 const cx = params.event?.event?.clientX ?? 0;
@@ -263,10 +264,21 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
                     };
                 });
             } else {
-                // Mouse moved to empty area (ocean, border) — clear panel
+                // A rendered province with no snacks clears an unpinned panel.
                 setFloatPanel((prev) => prev?.pinned ? prev : null);
             }
         });
+
+        // ZRender also reports movement over the canvas background. When it has
+        // no target, the pointer is over ocean or another blank part of the map.
+        const renderer = chart.getZr();
+        const onRendererMouseMove = (event: { target?: unknown }) => {
+            setFloatPanel((prev) => shouldClearMapHoverPanel({
+                hasRenderTarget: Boolean(event.target),
+                pinned: Boolean(prev?.pinned),
+            }) ? null : prev);
+        };
+        renderer.on('mousemove', onRendererMouseMove);
 
         const onContainerLeave = () => setFloatPanel((prev) => prev?.pinned ? prev : null);
         container?.addEventListener('mouseleave', onContainerLeave);
@@ -292,6 +304,7 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
         return () => {
             window.removeEventListener('resize', handleResize);
             container?.removeEventListener('mouseleave', onContainerLeave);
+            renderer.off('mousemove', onRendererMouseMove);
             chart.dispose();
         };
     }, [mapState, provinceMap, provincesWithSnacks, maxCount, getGreen, isDark]);
@@ -321,7 +334,7 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
                 {/* Custom floating panel — anchored to the clicked point inside the map */}
                 {floatPanel && floatPanel.snacks.length > 0 && (
                     <div
-                        className="z-30 bg-white rounded-lg shadow-xl border border-gray-200 p-3 min-w-[180px] max-w-[280px]"
+                        className="z-30 w-[146px] bg-white rounded-lg shadow-xl border border-gray-200 p-3"
                         style={{
                             ...floatPanel.panelPosition,
                             pointerEvents: floatPanel.pinned ? 'auto' : 'none',
@@ -357,7 +370,12 @@ export default function SnackMapView({ snacks }: { snacks: Snack[] }) {
                             ))}
                         </div>
                         <p className="text-[10px] text-gray-400 mt-2">
-                            {floatPanel.pinned ? '点击缩略图进入详情 · 点击✕关闭' : '点击省份固定面板'}
+                            {floatPanel.pinned ? (
+                                <>
+                                    <span className="block">点击缩略图进入详情</span>
+                                    <span className="block">点击✕关闭</span>
+                                </>
+                            ) : '点击省份固定面板'}
                         </p>
                     </div>
                 )}
