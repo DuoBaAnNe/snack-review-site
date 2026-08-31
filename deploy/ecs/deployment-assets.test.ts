@@ -28,6 +28,7 @@ function findBash() {
 
 function runOssDeploymentScenario(options: {
     args?: string;
+    directExecution?: boolean;
     manifest?: string;
     ossutilFailure?: boolean;
 }) {
@@ -35,7 +36,7 @@ function runOssDeploymentScenario(options: {
     const tempRoot = mkdtempSync(resolve(process.env.TEMP ?? process.env.TMP ?? '.', 'linglingqi-oss-test-'));
     const command = [
         'set -Eeuo pipefail',
-        'temp_root="$(cygpath -u "$1")"',
+        'if [[ "$(uname -s)" =~ ^(MINGW|MSYS|CYGWIN) ]]; then temp_root="$(cygpath -u "$1")"; else temp_root="$1"; fi',
         'runtime_dir="${temp_root}/runtime"',
         'fake_bin="${temp_root}/bin"',
         'mkdir -p "${runtime_dir}" "${fake_bin}"',
@@ -69,8 +70,8 @@ function runOssDeploymentScenario(options: {
         'export LINGLINGQI_OSS_TEST_ROOT="${temp_root}"',
         `export LINGLINGQI_OSS_TEST_MANIFEST='${options.manifest ?? '{"releaseSha":"0123456789abcdef0123456789abcdef01234567"}'}'`,
         options.ossutilFailure ? 'export LINGLINGQI_OSS_TEST_OSSUTIL_FAILURE=true' : '',
-        'source "$2"',
-        `main${options.args ? ` ${options.args}` : ''}`,
+        options.directExecution ? 'bash "$2"' : 'source "$2"',
+        options.directExecution ? '' : `main${options.args ? ` ${options.args}` : ''}`,
     ].filter(Boolean).join('\n');
     const result = spawnSync(bash, ['-lc', command, 'bash', tempRoot, 'deploy/ecs/deploy-from-oss.sh'], { encoding: 'utf8' });
     return { result, runtimeDir: resolve(tempRoot, 'runtime'), tempRoot };
@@ -210,6 +211,18 @@ test('OSS deployment downloads a SHA-derived release once and cleans its tempora
 
 test('OSS deployment rejects invocation parameters before downloading', () => {
     const scenario = runOssDeploymentScenario({ args: 'unexpected' });
+    try {
+        assert.notEqual(scenario.result.status, 0);
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'ossutil-calls')));
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'deploy-call')));
+        assert.deepEqual(readdirSync(scenario.runtimeDir), []);
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('OSS deployment accepts test dependencies only from a sourced library harness', () => {
+    const scenario = runOssDeploymentScenario({ directExecution: true });
     try {
         assert.notEqual(scenario.result.status, 0);
         assert.ok(!existsSync(resolve(scenario.tempRoot, 'ossutil-calls')));

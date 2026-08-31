@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-is_windows_test_mode() {
-    [[ "${LINGLINGQI_OSS_DEPLOY_TEST_MODE:-}" == "true" ]] &&
-        [[ "$(uname -s)" =~ ^(MINGW|MSYS|CYGWIN) ]]
+is_sourced_test_harness() {
+    [[ "${LINGLINGQI_OSS_DEPLOY_LIBRARY_ONLY:-}" == "true" ]] &&
+        [[ "${LINGLINGQI_OSS_DEPLOY_TEST_MODE:-}" == "true" ]] &&
+        [[ "${BASH_SOURCE[0]}" != "$0" ]]
 }
 
 configure_dependencies() {
@@ -14,8 +15,8 @@ configure_dependencies() {
     test_mode=false
 
     if [[ "${LINGLINGQI_OSS_DEPLOY_TEST_MODE:-}" == "true" ]]; then
-        if ! is_windows_test_mode; then
-            echo "OSS deployment test mode is supported only on Windows test hosts." >&2
+        if ! is_sourced_test_harness; then
+            echo "OSS deployment test dependencies require a sourced library harness." >&2
             return 1
         fi
         if [[ -z "${LINGLINGQI_OSS_TEST_CONFIG_FILE:-}" ||
