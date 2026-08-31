@@ -58,6 +58,22 @@ const failedFixture = JSON.stringify({
     },
 });
 
+const rollbackFixture = JSON.stringify({
+    Invocations: {
+        Invocation: [{
+            InvocationStatus: 'Failed',
+            InvokeInstances: {
+                InvokeInstance: [{
+                    InstanceId: validConfig.instanceId,
+                    InvocationStatus: 'Failed',
+                    ExitCode: 1,
+                    Output: `Rollback restored and verified ${fullSha}.`,
+                }],
+            },
+        }],
+    },
+});
+
 const runningFixture = JSON.stringify({
     Invocations: {
         Invocation: [{
@@ -115,8 +131,9 @@ test('parseInvocation distinguishes success, failure, and running', () => {
 function makeDependencies(options: {
     invocationResponses?: string[];
     cloudAssistant?: string;
-    status?: string;
     confirmedRequest?: string;
+    failRequestRead?: boolean;
+    failRequestDelete?: boolean;
 } = {}): {
     dependencies: PublisherDependencies;
     commands: Command[];
@@ -158,6 +175,11 @@ function makeDependencies(options: {
                 if (command.file === 'aliyun' && command.args[1] === 'DescribeInvocations') {
                     return { stdout: invocationResponses.shift() ?? successFixture, stderr: '' };
                 }
+                if (command.file === 'ossutil' && command.args[1] === 'delete-object' &&
+                    command.args[command.args.indexOf('--key') + 1] === 'ecs-releases/requests/current.json' &&
+                    options.failRequestDelete) {
+                    throw new Error('request manifest delete failed');
+                }
                 return { stdout: '', stderr: '' };
             },
             async readFile(file) {
@@ -168,6 +190,9 @@ function makeDependencies(options: {
                     return new Uint8Array([1, 2, 3]);
                 }
                 if (file.endsWith('request-confirm.json')) {
+                    if (options.failRequestRead) {
+                        throw new Error('request manifest read failed');
+                    }
                     return options.confirmedRequest ?? JSON.stringify({ releaseSha: fullSha });
                 }
                 throw new Error(`Unexpected read: ${file}`);
@@ -227,13 +252,43 @@ test('publisher uploads immutable artifacts before the fixed request and invokes
         .filter((command) => command.file === 'ossutil' && command.args[1] === 'delete-object')
         .map((command) => command.args[command.args.indexOf('--key') + 1]);
     assert.deepEqual(deletedKeys, [
+        'ecs-releases/requests/current.json',
         `ecs-releases/${fullSha}/source.bundle`,
         `ecs-releases/${fullSha}/source.bundle.sha256`,
-        'ecs-releases/requests/current.json',
     ]);
 });
 
-test('publisher retains the request manifest and warns when it cannot confirm ownership', async () => {
+test('publisher classifies deploy.sh verified rollback output as rolled back', async () => {
+    const scenario = makeDependencies({ invocationResponses: [rollbackFixture] });
+
+    const result = await publishAlibabaRelease({ sha: fullSha }, scenario.dependencies);
+
+    assert.deepEqual(result, { state: 'rolled-back', invokeId: 't-test' });
+});
+
+test('publisher does not accept a verified rollback line for another release', async () => {
+    const scenario = makeDependencies({ invocationResponses: [JSON.stringify({
+        Invocations: {
+            Invocation: [{
+                InvocationStatus: 'Failed',
+                InvokeInstances: {
+                    InvokeInstance: [{
+                        InstanceId: validConfig.instanceId,
+                        InvocationStatus: 'Failed',
+                        ExitCode: 1,
+                        Output: `Rollback restored and verified ${'a'.repeat(40)}.`,
+                    }],
+                },
+            }],
+        },
+    })] });
+
+    const result = await publishAlibabaRelease({ sha: fullSha }, scenario.dependencies);
+
+    assert.deepEqual(result, { state: 'manual-intervention', invokeId: 't-test' });
+});
+
+test('publisher leaves another valid request in place while deleting only this release artifacts', async () => {
     const scenario = makeDependencies({ confirmedRequest: JSON.stringify({ releaseSha: 'a'.repeat(40) }) });
 
     const result = await publishAlibabaRelease({ sha: fullSha }, scenario.dependencies);
@@ -242,7 +297,48 @@ test('publisher retains the request manifest and warns when it cannot confirm ow
     const deletedKeys = scenario.commands
         .filter((command) => command.file === 'ossutil' && command.args[1] === 'delete-object')
         .map((command) => command.args[command.args.indexOf('--key') + 1]);
-    assert.equal(deletedKeys.includes('ecs-releases/requests/current.json'), false);
+    assert.deepEqual(deletedKeys, [
+        `ecs-releases/${fullSha}/source.bundle`,
+        `ecs-releases/${fullSha}/source.bundle.sha256`,
+    ]);
+});
+
+test('publisher preserves manifest and artifacts when reading the confirmation fails', async () => {
+    const scenario = makeDependencies({ failRequestRead: true });
+
+    const result = await publishAlibabaRelease({ sha: fullSha }, scenario.dependencies);
+
+    assert.deepEqual(result, { state: 'success', invokeId: 't-test' });
+    const deletedKeys = scenario.commands
+        .filter((command) => command.file === 'ossutil' && command.args[1] === 'delete-object')
+        .map((command) => command.args[command.args.indexOf('--key') + 1]);
+    assert.deepEqual(deletedKeys, []);
+    assert.ok(scenario.warnings.some((warning) => warning.includes('retained')));
+});
+
+test('publisher preserves manifest and artifacts when the confirmation is malformed', async () => {
+    const scenario = makeDependencies({ confirmedRequest: JSON.stringify({ releaseSha: fullSha, unexpected: true }) });
+
+    const result = await publishAlibabaRelease({ sha: fullSha }, scenario.dependencies);
+
+    assert.deepEqual(result, { state: 'success', invokeId: 't-test' });
+    const deletedKeys = scenario.commands
+        .filter((command) => command.file === 'ossutil' && command.args[1] === 'delete-object')
+        .map((command) => command.args[command.args.indexOf('--key') + 1]);
+    assert.deepEqual(deletedKeys, []);
+    assert.ok(scenario.warnings.some((warning) => warning.includes('retained')));
+});
+
+test('publisher preserves artifacts when deletion of its matching request fails', async () => {
+    const scenario = makeDependencies({ failRequestDelete: true });
+
+    const result = await publishAlibabaRelease({ sha: fullSha }, scenario.dependencies);
+
+    assert.deepEqual(result, { state: 'success', invokeId: 't-test' });
+    const deletedKeys = scenario.commands
+        .filter((command) => command.file === 'ossutil' && command.args[1] === 'delete-object')
+        .map((command) => command.args[command.args.indexOf('--key') + 1]);
+    assert.deepEqual(deletedKeys, ['ecs-releases/requests/current.json']);
     assert.ok(scenario.warnings.some((warning) => warning.includes('retained')));
 });
 

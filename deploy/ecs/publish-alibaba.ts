@@ -192,34 +192,59 @@ function isAlreadyDeployed(output: string, sha: string): boolean {
     return output.includes(`Already deployed and verified ${sha}`);
 }
 
-function rollbackSucceeded(output: string): boolean {
-    return /rollback[^\n]*(?:succeeded|successful|complete)/i.test(output);
+function rollbackSucceeded(output: string, releaseSha: string): boolean {
+    return new RegExp(`(?:^|\\r?\\n)Rollback restored and verified ${releaseSha}\\.(?:\\r?$|\\r?\\n)`).test(output);
+}
+
+function parseRequestReleaseSha(requestManifest: string): string {
+    let value: unknown;
+    try {
+        value = JSON.parse(requestManifest);
+    } catch {
+        throw new Error('The current OSS request is not valid JSON');
+    }
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error('The current OSS request is not an object');
+    }
+    const request = value as Record<string, unknown>;
+    if (Object.keys(request).length !== 1 || typeof request.releaseSha !== 'string') {
+        throw new Error('The current OSS request does not have exactly one releaseSha');
+    }
+    return validateReleaseSha(request.releaseSha);
 }
 
 async function cleanSuccessfulRelease(
     commands: ReturnType<typeof buildCommands>,
     releaseDirectory: string,
-    expectedRequest: string,
+    releaseSha: string,
     dependencies: PublisherDependencies,
 ): Promise<void> {
+    let confirmedReleaseSha: string;
+    try {
+        await dependencies.exec(commands.downloadRequestForConfirmation);
+        confirmedReleaseSha = parseRequestReleaseSha(asText(await dependencies.readFile(`${releaseDirectory}/request-confirm.json`)));
+    } catch {
+        dependencies.warn('Could not safely confirm the current OSS request, so it and this release’s artifacts were retained.');
+        return;
+    }
+
+    if (confirmedReleaseSha === releaseSha) {
+        try {
+            await dependencies.exec(commands.deleteRequest);
+        } catch {
+            dependencies.warn('Could not remove this release’s matching OSS request, so it and this release’s artifacts were retained.');
+            return;
+        }
+    } else {
+        dependencies.warn('The current OSS request names another valid release and was retained.');
+    }
+
     for (const command of [commands.deleteBundle, commands.deleteChecksum]) {
         try {
             await dependencies.exec(command);
         } catch {
             dependencies.warn('Could not remove this release’s immutable OSS artifact; lifecycle cleanup will retain it temporarily.');
         }
-    }
-
-    try {
-        await dependencies.exec(commands.downloadRequestForConfirmation);
-        const confirmed = asText(await dependencies.readFile(`${releaseDirectory}/request-confirm.json`));
-        if (confirmed !== expectedRequest) {
-            dependencies.warn('The current OSS request no longer matches this release, so it was retained.');
-            return;
-        }
-        await dependencies.exec(commands.deleteRequest);
-    } catch {
-        dependencies.warn('Could not safely confirm the current OSS request, so it was retained.');
     }
 }
 
@@ -285,7 +310,7 @@ export async function publishAlibabaRelease(
                 continue;
             }
             if (status.state === 'failed') {
-                return rollbackSucceeded(status.output)
+                return rollbackSucceeded(status.output, releaseSha)
                     ? { state: 'rolled-back', invokeId }
                     : { state: 'manual-intervention', invokeId };
             }
@@ -302,7 +327,7 @@ export async function publishAlibabaRelease(
                 return { state: 'manual-intervention', invokeId };
             }
 
-            await cleanSuccessfulRelease(commands, releaseDirectory, requestManifest, dependencies);
+            await cleanSuccessfulRelease(commands, releaseDirectory, releaseSha, dependencies);
             return isAlreadyDeployed(status.output, releaseSha)
                 ? { state: 'already-deployed', invokeId }
                 : { state: 'success', invokeId };
