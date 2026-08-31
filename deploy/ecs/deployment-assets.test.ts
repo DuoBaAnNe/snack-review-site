@@ -366,6 +366,59 @@ test('Cloud Assistant command has no parameters and invokes only the fixed OSS d
     assert.doesNotMatch(command, /curl|git|ossutil|ssh|vercel/);
 });
 
+test('ECS release reader policy grants only object reads under the release prefix', () => {
+    const policy = JSON.parse(read('deploy/ecs/ram/ecs-release-reader-policy.json'));
+    assert.deepEqual(policy, {
+        Version: '1',
+        Statement: [{
+            Effect: 'Allow',
+            Action: ['oss:GetObject'],
+            Resource: ['acs:oss:*:*:RELEASE_BUCKET/ecs-releases/*'],
+        }],
+    });
+});
+
+test('local release publisher policy is limited to release objects and one fixed ECS command target', () => {
+    const policy = JSON.parse(read('deploy/ecs/ram/local-release-publisher-policy.json'));
+    assert.deepEqual(policy, {
+        Version: '1',
+        Statement: [
+            {
+                Effect: 'Allow',
+                Action: ['oss:PutObject', 'oss:GetObject', 'oss:DeleteObject'],
+                Resource: ['acs:oss:*:*:RELEASE_BUCKET/ecs-releases/*'],
+            },
+            {
+                Effect: 'Allow',
+                Action: ['ecs:InvokeCommand'],
+                Resource: [
+                    'acs:ecs:cn-shenzhen:ACCOUNT_ID:command/COMMAND_ID',
+                    'acs:ecs:cn-shenzhen:ACCOUNT_ID:instance/i-wz9doghzi13squhaxb6t',
+                ],
+            },
+            {
+                Effect: 'Allow',
+                Action: ['ecs:DescribeCloudAssistantStatus'],
+                Resource: ['acs:ecs:cn-shenzhen:ACCOUNT_ID:instance/i-wz9doghzi13squhaxb6t'],
+            },
+            {
+                Effect: 'Allow',
+                Action: ['ecs:DescribeInvocations'],
+                Resource: [
+                    'acs:ecs:cn-shenzhen:ACCOUNT_ID:command/COMMAND_ID',
+                    'acs:ecs:cn-shenzhen:ACCOUNT_ID:instance/i-wz9doghzi13squhaxb6t',
+                ],
+            },
+        ],
+    });
+
+    const actions = policy.Statement.flatMap((statement: { Action: string[] }) => statement.Action);
+    assert.ok(!actions.includes('ecs:*'));
+    assert.ok(!actions.includes('oss:*'));
+    const text = JSON.stringify(policy);
+    assert.doesNotMatch(text, /SecurityGroup|RunCommand|CreateCommand|ModifyCommand|DeleteCommand|AccessKey|vercel|ssh/i);
+});
+
 test('bootstrap creates the automatic deployment directory without deployment configuration', () => {
     const bootstrap = read('deploy/ecs/bootstrap-alibaba-linux.sh');
     assert.match(bootstrap, /install -d -o root -g root -m 0755 \/usr\/local\/libexec\/linglingqi/);

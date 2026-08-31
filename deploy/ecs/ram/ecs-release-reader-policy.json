@@ -1,0 +1,14 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:GetObject"
+      ],
+      "Resource": [
+        "acs:oss:*:*:RELEASE_BUCKET/ecs-releases/*"
+      ]
+    }
+  ]
+}
