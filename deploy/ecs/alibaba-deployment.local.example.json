@@ -1,0 +1,8 @@
+{
+  "regionId": "cn-shenzhen",
+  "instanceId": "i-wz9doghzi13squhaxb6t",
+  "bucket": "replace-with-private-release-bucket",
+  "objectPrefix": "ecs-releases",
+  "commandId": "c-replace-with-fixed-command-id",
+  "aliyunProfile": "linglingqi-deployer"
+}

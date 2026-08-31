@@ -50,3 +50,5 @@ public/uploads/*
 
 .vercel
 .worktrees/
+/.superpowers/
+/deploy/ecs/alibaba-deployment.local.json
