@@ -77,6 +77,46 @@ function runOssDeploymentScenario(options: {
     return { result, runtimeDir: resolve(tempRoot, 'runtime'), tempRoot };
 }
 
+function runAutomaticInstallerScenario(options: {
+    config: string;
+    ossutilExitCode: number;
+    ossutilOutput: string;
+}) {
+    const bash = findBash();
+    const tempRoot = mkdtempSync(resolve(process.env.TEMP ?? process.env.TMP ?? '.', 'linglingqi-installer-test-'));
+    const command = [
+        'set -Eeuo pipefail',
+        'if [[ "$(uname -s)" =~ ^(MINGW|MSYS|CYGWIN) ]]; then temp_root="$(cygpath -u "$1")"; else temp_root="$1"; fi',
+        'fake_bin="${temp_root}/bin"',
+        'mkdir -p "${fake_bin}"',
+        'cat > "${temp_root}/config.json" <<\'JSON\'',
+        options.config,
+        'JSON',
+        'cat > "${fake_bin}/id" <<\'FAKE_ID\'',
+        '#!/usr/bin/env bash',
+        'if [[ "$1" == "-u" ]]; then printf "0\\n"; exit 0; fi',
+        'exec /usr/bin/id "$@"',
+        'FAKE_ID',
+        'cat > "${fake_bin}/ossutil" <<\'FAKE_OSSUTIL\'',
+        '#!/usr/bin/env bash',
+        'printf "%s\\n" "$*" >> "${LINGLINGQI_INSTALLER_TEST_ROOT}/ossutil-calls"',
+        'printf "%s\\n" "${LINGLINGQI_INSTALLER_TEST_OSSUTIL_OUTPUT}"',
+        'exit "${LINGLINGQI_INSTALLER_TEST_OSSUTIL_EXIT}"',
+        'FAKE_OSSUTIL',
+        'cat > "${fake_bin}/install" <<\'FAKE_INSTALL\'',
+        '#!/usr/bin/env bash',
+        'printf "%s\\n" "$*" >> "${LINGLINGQI_INSTALLER_TEST_ROOT}/install-calls"',
+        'FAKE_INSTALL',
+        'chmod +x "${fake_bin}/id" "${fake_bin}/ossutil" "${fake_bin}/install"',
+        'export LINGLINGQI_INSTALLER_TEST_ROOT="${temp_root}"',
+        `export LINGLINGQI_INSTALLER_TEST_OSSUTIL_EXIT='${options.ossutilExitCode}'`,
+        `export LINGLINGQI_INSTALLER_TEST_OSSUTIL_OUTPUT='${options.ossutilOutput}'`,
+        'PATH="${fake_bin}:${PATH}" bash "$2" "${temp_root}/config.json"',
+    ].join('\n');
+    const result = spawnSync(bash, ['-lc', command, 'bash', tempRoot, 'deploy/ecs/install-automatic-deployment.sh'], { encoding: 'utf8' });
+    return { result, tempRoot };
+}
+
 test('systemd runs Next.js as the dedicated user on loopback', () => {
     const service = read('deploy/ecs/systemd/linglingqi.service');
     assert.match(service, /^User=linglingqi$/m);
@@ -269,6 +309,53 @@ test('automatic deployment installer installs root-owned entrypoints and constra
     assert.match(installer, /ossutil version/);
     assert.match(installer, /official ossutil 2\.x installation instructions/);
     assert.doesNotMatch(installer, /curl\s*\|\s*(?:ba)?sh/);
+});
+
+test('automatic deployment installer validates supplied JSON before querying ossutil', () => {
+    const scenario = runAutomaticInstallerScenario({
+        config: '{',
+        ossutilExitCode: 0,
+        ossutilOutput: 'ossutil version 2.1.0',
+    });
+    try {
+        assert.notEqual(scenario.result.status, 0);
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'ossutil-calls')));
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'install-calls')));
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('automatic deployment installer rejects failed ossutil 2.x checks before installing files', () => {
+    const scenario = runAutomaticInstallerScenario({
+        config: '{"region":"cn-shenzhen","bucket":"abc","endpoint":"https://oss-cn-shenzhen-internal.aliyuncs.com","prefix":"ecs-releases","ecsRoleName":"9.release-reader"}',
+        ossutilExitCode: 55,
+        ossutilOutput: 'ossutil version 2.1.0',
+    });
+    try {
+        assert.notEqual(scenario.result.status, 0);
+        assert.match(scenario.result.stderr, /ossutil 2\.x is required/);
+        assert.equal(readFileSync(resolve(scenario.tempRoot, 'ossutil-calls'), 'utf8').trim(), 'version');
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'install-calls')));
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
+});
+
+test('automatic deployment installer rejects non-version ossutil output before installing files', () => {
+    const scenario = runAutomaticInstallerScenario({
+        config: '{"region":"cn-shenzhen","bucket":"abc","endpoint":"https://oss-cn-shenzhen-internal.aliyuncs.com","prefix":"ecs-releases","ecsRoleName":"9.release-reader"}',
+        ossutilExitCode: 0,
+        ossutilOutput: 'unexpected output mentioning 2.1.0',
+    });
+    try {
+        assert.notEqual(scenario.result.status, 0);
+        assert.match(scenario.result.stderr, /ossutil 2\.x is required/);
+        assert.equal(readFileSync(resolve(scenario.tempRoot, 'ossutil-calls'), 'utf8').trim(), 'version');
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'install-calls')));
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
 });
 
 test('Cloud Assistant command has no parameters and invokes only the fixed OSS deploy entrypoint', () => {

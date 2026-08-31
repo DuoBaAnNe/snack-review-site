@@ -19,12 +19,6 @@ if [[ ! -f "${config_source}" || -L "${config_source}" ]]; then
     exit 1
 fi
 
-ossutil_version="$(ossutil version 2>&1 || true)"
-if [[ ! "${ossutil_version}" =~ (^|[^0-9])2\.[0-9]+ ]]; then
-    echo "ossutil 2.x is required. Install it using the official ossutil 2.x installation instructions before rerunning." >&2
-    exit 1
-fi
-
 node --input-type=module - "${config_source}" <<'NODE'
 import { readFileSync } from 'node:fs';
 
@@ -54,6 +48,15 @@ if (config.region !== 'cn-shenzhen'
     process.exit(1);
 }
 NODE
+
+if ! ossutil_version="$(ossutil version 2>&1)"; then
+    echo "ossutil 2.x is required. Install it using the official ossutil 2.x installation instructions before rerunning." >&2
+    exit 1
+fi
+if [[ ! "${ossutil_version}" =~ ^ossutil[[:space:]]+version:?[[:space:]]+2\.[0-9]+(\.[0-9]+)?$ ]]; then
+    echo "ossutil 2.x is required. Install it using the official ossutil 2.x installation instructions before rerunning." >&2
+    exit 1
+fi
 
 if [[ ! -d /etc/linglingqi || -L /etc/linglingqi ]]; then
     echo "Expected /etc/linglingqi from bootstrap-alibaba-linux.sh." >&2
