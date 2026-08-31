@@ -259,6 +259,32 @@ test('OSS deployment stops before deploy when ossutil fails and cleans up', () =
     }
 });
 
+test('automatic deployment installer installs root-owned entrypoints and constrained configuration', () => {
+    const installer = read('deploy/ecs/install-automatic-deployment.sh');
+    assert.match(installer, /\[\[ "\$\(id -u\)" != "0" \]\]/);
+    assert.match(installer, /install -d -o root -g root -m 0755 \/usr\/local\/libexec\/linglingqi/);
+    assert.match(installer, /install -o root -g root -m 0755[\s\S]*deploy\.sh[\s\S]*\/usr\/local\/libexec\/linglingqi\/deploy\.sh/);
+    assert.match(installer, /install -o root -g root -m 0755[\s\S]*deploy-from-oss\.sh[\s\S]*\/usr\/local\/libexec\/linglingqi\/deploy-from-oss\.sh/);
+    assert.match(installer, /install -o root -g root -m 0600[\s\S]*\/etc\/linglingqi\/alibaba-deployment\.json/);
+    assert.match(installer, /ossutil version/);
+    assert.match(installer, /official ossutil 2\.x installation instructions/);
+    assert.doesNotMatch(installer, /curl\s*\|\s*(?:ba)?sh/);
+});
+
+test('Cloud Assistant command has no parameters and invokes only the fixed OSS deploy entrypoint', () => {
+    const command = read('deploy/ecs/cloud-assistant-command.sh');
+    assert.match(command, /^#!\/usr\/bin\/env bash$/m);
+    assert.match(command, /^exec \/usr\/local\/libexec\/linglingqi\/deploy-from-oss\.sh$/m);
+    assert.doesNotMatch(command, /\{\{|\}\}|\$[0-9]|release_sha/);
+    assert.doesNotMatch(command, /curl|git|ossutil|ssh|vercel/);
+});
+
+test('bootstrap creates the automatic deployment directory without deployment configuration', () => {
+    const bootstrap = read('deploy/ecs/bootstrap-alibaba-linux.sh');
+    assert.match(bootstrap, /install -d -o root -g root -m 0755 \/usr\/local\/libexec\/linglingqi/);
+    assert.doesNotMatch(bootstrap, /alibaba-deployment\.json|ecsRoleName|bucket|credential/i);
+});
+
 test('offline bundle validation snapshots an ordinary artifact before local verification and import', () => {
     const deploy = read('deploy/ecs/deploy.sh');
     assert.match(deploy, /snapshot_offline_bundle\(\)/);

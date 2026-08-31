@@ -49,6 +49,7 @@ fi
 
 install -d -o root -g root -m 0755 /opt/linglingqi
 install -d -o root -g root -m 0755 /opt/linglingqi/releases
+install -d -o root -g root -m 0755 /usr/local/libexec/linglingqi
 install -d -o root -g linglingqi -m 0750 /etc/linglingqi
 install -d -o root -g root -m 0700 /etc/nginx/ssl/linglingqi
 
