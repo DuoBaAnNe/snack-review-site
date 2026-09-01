@@ -12,6 +12,7 @@ import {
     createLocalPublishLock,
     isEntryPoint,
     publishAlibabaRelease,
+    resolveSpawnCommand,
     type Command,
     type PublisherDependencies,
 } from './publish-alibaba';
@@ -25,6 +26,25 @@ const validConfig = {
     commandId: 'c-test123',
     aliyunProfile: 'linglingqi-deployer',
 };
+
+test('Windows npm commands run through node instead of spawning npm.cmd directly', () => {
+    assert.deepEqual(
+        resolveSpawnCommand(
+            { file: 'npm', args: ['run', 'build'] },
+            'win32',
+            'C:\\node\\node.exe',
+            'C:\\node\\node_modules\\npm\\bin\\npm-cli.js',
+        ),
+        {
+            file: 'C:\\node\\node.exe',
+            args: [
+                'C:\\node\\node_modules\\npm\\bin\\npm-cli.js',
+                'run',
+                'build',
+            ],
+        },
+    );
+});
 
 const successFixture = JSON.stringify({
     Invocations: {

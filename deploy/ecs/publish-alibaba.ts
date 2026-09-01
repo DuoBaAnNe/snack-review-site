@@ -63,13 +63,28 @@ const healthEndpoint = 'https://linglingqi.fun/api/health';
 const defaultPollTimeoutMs = 30 * 60 * 1_000;
 const defaultPollIntervalMs = 5_000;
 
-function executableFor(command: Command): string {
-    return process.platform === 'win32' && command.file === 'npm' ? 'npm.cmd' : command.file;
+export function resolveSpawnCommand(
+    command: Command,
+    platform = process.platform,
+    nodeExecutable = process.execPath,
+    npmExecutable = process.env.npm_execpath,
+): Command {
+    if (platform !== 'win32' || command.file !== 'npm') {
+        return command;
+    }
+    if (!npmExecutable) {
+        throw new Error('npm_execpath is required to run npm safely on Windows');
+    }
+    return {
+        file: nodeExecutable,
+        args: [npmExecutable, ...command.args],
+    };
 }
 
 function runCommand(command: Command): Promise<CommandResult> {
     return new Promise((resolveResult, reject) => {
-        const child = spawn(executableFor(command), command.args, {
+        const resolvedCommand = resolveSpawnCommand(command);
+        const child = spawn(resolvedCommand.file, resolvedCommand.args, {
             cwd: process.cwd(),
             shell: false,
             windowsHide: true,
