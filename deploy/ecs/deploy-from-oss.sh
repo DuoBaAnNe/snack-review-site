@@ -80,7 +80,7 @@ download_object() {
     local object_key="$1"
     local destination="$2"
     "${ossutil_command}" cp "oss://${bucket}/${object_key}" "${destination}" --force \
-        --mode EcsRamRole --ecs-role-name "${ecs_role_name}" \
+        --mode EcsRamRole \
         --region "${region}" --endpoint "${endpoint}" >/dev/null
 }
 

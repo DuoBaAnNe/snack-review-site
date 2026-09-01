@@ -206,7 +206,7 @@ test('OSS deployment reads only a fixed request manifest and derives immutable r
     assert.match(script, /ecs-releases\/\$\{release_sha\}\/source\.bundle\.sha256/);
     assert.doesNotMatch(script, /release_sha="\$1"/);
     assert.match(script, /--mode EcsRamRole/);
-    assert.match(script, /--ecs-role-name "\$\{ecs_role_name\}"/);
+    assert.doesNotMatch(script, /--ecs-role-name/);
     assert.match(script, /oss-cn-shenzhen-internal\.aliyuncs\.com/);
     assert.match(script, /mktemp --directory \/run\/linglingqi-release\.XXXXXXXX/);
     assert.match(script, /trap cleanup EXIT/);
