@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
     buildCommands,
     buildObjectKeys,
+    fileBody,
     parseConfig,
     parseInvocation,
     parseInvokeId,
@@ -26,6 +27,10 @@ const validConfig = {
     commandId: 'c-test123',
     aliyunProfile: 'linglingqi-deployer',
 };
+
+test('OSS file bodies use the native Windows path format accepted by ossutil', () => {
+    assert.equal(fileBody('C:\\release\\source.bundle', 'win32'), 'file://C:\\release\\source.bundle');
+});
 
 test('Windows npm commands run through node instead of spawning npm.cmd directly', () => {
     assert.deepEqual(
@@ -253,10 +258,7 @@ test('publisher uploads immutable artifacts before the fixed request and invokes
     assert.match(putObjects[0].args[putObjects[0].args.indexOf('--key') + 1], new RegExp(`/${fullSha}/source\\.bundle$`));
     assert.match(putObjects[1].args[putObjects[1].args.indexOf('--key') + 1], new RegExp(`/${fullSha}/source\\.bundle\\.sha256$`));
     assert.equal(putObjects[2].args[putObjects[2].args.indexOf('--key') + 1], 'ecs-releases/requests/current.json');
-    assert.deepEqual(putObjects.slice(0, 2).map((command) => command.args.slice(-2)), [
-        ['--forbid-overwrite', 'true'],
-        ['--forbid-overwrite', 'true'],
-    ]);
+    assert.ok(putObjects.slice(0, 2).every((command) => command.args.at(-1) === '--forbid-overwrite'));
     assert.equal(putObjects[2].args.includes('--forbid-overwrite'), false);
     const manifest = [...scenario.writes.entries()].find(([file]) => file.endsWith('request.json'));
     assert.deepEqual(manifest?.[1], JSON.stringify({ releaseSha: fullSha }));

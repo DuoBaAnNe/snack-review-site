@@ -162,8 +162,12 @@ export function parseInvocation(json: string): InvocationState {
     throw new Error(`DescribeInvocations returned an unsupported InvocationStatus: ${status}`);
 }
 
-function fileBody(path: string): string {
-    return pathToFileURL(resolve(path)).href;
+export function fileBody(path: string, platform = process.platform): string {
+    const absolutePath = resolve(path);
+    if (platform === 'win32') {
+        return `file://${absolutePath}`;
+    }
+    return pathToFileURL(absolutePath).href;
 }
 
 function profile(config: DeployConfig): string[] {
@@ -201,7 +205,7 @@ export function buildCommands(config: DeployConfig, sha: string, releaseDirector
         args: [
             'api', 'put-object', '--bucket', config.bucket, '--key', key,
             '--body', fileBody(path),
-            ...(immutable ? ['--forbid-overwrite', 'true'] : []),
+            ...(immutable ? ['--forbid-overwrite'] : []),
         ],
     });
     const ossDelete = (key: string): Command => ({
