@@ -342,6 +342,23 @@ test('automatic deployment installer rejects failed ossutil 2.x checks before in
     }
 });
 
+test('automatic deployment installer accepts the official ossutil 2.4 bare version output', () => {
+    const scenario = runAutomaticInstallerScenario({
+        config: '{"region":"cn-shenzhen","bucket":"abc","endpoint":"https://oss-cn-shenzhen-internal.aliyuncs.com","prefix":"ecs-releases","ecsRoleName":"9.release-reader"}',
+        ossutilExitCode: 0,
+        ossutilOutput: '2.4.0',
+    });
+    try {
+        assert.notEqual(scenario.result.status, 0);
+        assert.doesNotMatch(scenario.result.stderr, /ossutil 2\.x is required/);
+        assert.match(scenario.result.stderr, /Expected \/etc\/linglingqi/);
+        assert.equal(readFileSync(resolve(scenario.tempRoot, 'ossutil-calls'), 'utf8').trim(), 'version');
+        assert.ok(!existsSync(resolve(scenario.tempRoot, 'install-calls')));
+    } finally {
+        rmSync(scenario.tempRoot, { recursive: true, force: true });
+    }
+});
+
 test('automatic deployment installer rejects non-version ossutil output before installing files', () => {
     const scenario = runAutomaticInstallerScenario({
         config: '{"region":"cn-shenzhen","bucket":"abc","endpoint":"https://oss-cn-shenzhen-internal.aliyuncs.com","prefix":"ecs-releases","ecsRoleName":"9.release-reader"}',

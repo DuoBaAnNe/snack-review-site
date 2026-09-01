@@ -53,7 +53,7 @@ if ! ossutil_version="$(ossutil version 2>&1)"; then
     echo "ossutil 2.x is required. Install it using the official ossutil 2.x installation instructions before rerunning." >&2
     exit 1
 fi
-if [[ ! "${ossutil_version}" =~ ^ossutil[[:space:]]+version:?[[:space:]]+2\.[0-9]+(\.[0-9]+)?$ ]]; then
+if [[ ! "${ossutil_version}" =~ ^(ossutil[[:space:]]+version:?[[:space:]]+)?2\.[0-9]+(\.[0-9]+)?$ ]]; then
     echo "ossutil 2.x is required. Install it using the official ossutil 2.x installation instructions before rerunning." >&2
     exit 1
 fi
