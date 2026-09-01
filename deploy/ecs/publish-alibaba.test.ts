@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
     buildCommands,
     buildObjectKeys,
+    cloudAssistantIsReady,
     fileBody,
     parseConfig,
     parseInvocation,
@@ -30,6 +31,17 @@ const validConfig = {
 
 test('OSS file bodies use the native Windows path format accepted by ossutil', () => {
     assert.equal(fileBody('C:\\release\\source.bundle', 'win32'), 'file://C:\\release\\source.bundle');
+});
+
+test('Cloud Assistant readiness accepts the CLI string boolean for the pinned instance', () => {
+    assert.equal(cloudAssistantIsReady(JSON.stringify({
+        InstanceCloudAssistantStatusSet: {
+            InstanceCloudAssistantStatus: [{
+                InstanceId: validConfig.instanceId,
+                CloudAssistantStatus: 'true',
+            }],
+        },
+    }), validConfig.instanceId), true);
 });
 
 test('Windows npm commands run through node instead of spawning npm.cmd directly', () => {

@@ -275,5 +275,8 @@ export function cloudAssistantIsReady(json: string, expectedInstanceId: string):
         throw new Error('DescribeCloudAssistantStatus response has an invalid shape');
     }
     const statuses = value.InstanceCloudAssistantStatusSet.InstanceCloudAssistantStatus;
-    return statuses.length === 1 && isRecord(statuses[0]) && statuses[0].InstanceId === expectedInstanceId && statuses[0].CloudAssistantStatus === true;
+    return statuses.length === 1
+        && isRecord(statuses[0])
+        && statuses[0].InstanceId === expectedInstanceId
+        && (statuses[0].CloudAssistantStatus === true || statuses[0].CloudAssistantStatus === 'true');
 }
